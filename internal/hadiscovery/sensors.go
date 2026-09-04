@@ -263,6 +263,39 @@ func hostSensors(uid func(string) string) map[string]Component {
 			StateClass:        "measurement",
 			Icon:              "mdi:memory",
 		},
+		"memory_used": {
+			// The gauge half of the reading above. Percent rather than
+			// bytes because a gauge card needs a fixed maximum, and the
+			// total memory of the node is not something Home Assistant
+			// is told anywhere else.
+			//
+			// No device class: Home Assistant has none that means "share
+			// of memory", and borrowing one that converts units would
+			// turn a percentage into something else.
+			Platform:          "sensor",
+			Name:              "Memory used",
+			UniqueID:          uid("memory_used"),
+			ValueTemplate:     optional("memory_used_pct"),
+			UnitOfMeasurement: "%",
+			StateClass:        "measurement",
+			DisplayPrecision:  intPtr(1),
+			Icon:              "mdi:memory",
+		},
+		"mac_address": {
+			// Diagnostic, and the entity is the lesser half of what this
+			// reading is for: the address also goes into the device's
+			// connections, which is the field Home Assistant actually
+			// matches on to fold this device together with the one its
+			// DHCP or router integration already knows. The entity makes
+			// that visible to an operator asking why the link did or did
+			// not form.
+			Platform:       "sensor",
+			Name:           "MAC address",
+			UniqueID:       uid("mac_address"),
+			ValueTemplate:  optional("mac_address"),
+			EntityCategory: "diagnostic",
+			Icon:           "mdi:ethernet",
+		},
 		"last_seen": {
 			Platform:         "sensor",
 			Name:             "Last seen",

@@ -128,6 +128,26 @@ pool, so a large download competes with a resident model, and the
 failure is not a clean OOM — it is userspace starvation, where sshd
 accepts a connection and then cannot fork.
 
+**Memory used**, as a percentage, is that same reading in the form a
+gauge card can draw — derived from it rather than measured separately,
+so the two can never disagree. It is the share of memory a new
+allocation could not get, which is not what `free` calls used:
+reclaimable page cache counts as available, so a node that has just
+pulled a 60 GB model reads calmer here than its resident-set accounting
+would suggest. That is the intended reading. The question is how close
+the next allocation is to failing, not where the bytes went.
+
+**The MAC address** is published so Home Assistant can recognise this
+node as a machine it already knows. The entity is the visible half; the
+working half is the `connections` entry in the device record, which is
+what the device registry matches on to fold this device together with
+whatever a DHCP, router or ping integration has for the same host. The
+address is read from `/sys/class/net`, and the interface chosen is the
+one carrying the default route — a Spark has two QSFP fabric ports whose
+kernel names sort ahead of the RJ45 the house network sees, so "the
+first one" would publish an address nothing else has ever heard of.
+`-net-interface` overrides the choice.
+
 ## Design notes
 
 **Absent is not zero.** Every optional reading is a pointer, omitted from
@@ -170,7 +190,7 @@ good values forward would leave a calm dashboard over a dead server.
 | `internal/hadiscovery` | HA device discovery types and the sensor catalog |
 | `internal/publisher` | state payload, derived rates, MQTT transport |
 | `internal/gpu` | accelerator adapters; `nvidia-smi` today |
-| `internal/host` | host memory, which on unified memory is the number that matters |
+| `internal/host` | host memory, which on unified memory is the number that matters, and the network identity |
 | `internal/config` | flags and environment |
 | `internal/sdnotify` | systemd readiness, status and watchdog protocol |
 | `deploy/` | systemd unit |

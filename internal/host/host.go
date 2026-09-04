@@ -1,4 +1,6 @@
-// Package host reads the memory the accelerator actually competes for.
+// Package host reads what the node can say about itself: the memory the
+// accelerator actually competes for, and the network identity Home
+// Assistant files it under.
 //
 // On unified-memory hardware there is no separate framebuffer to query:
 // model weights, KV cache and the page cache all draw on one pool, so
@@ -18,6 +20,26 @@ import (
 type Memory struct {
 	TotalBytes     *int64
 	AvailableBytes *int64
+}
+
+// UsedPct is the share of the host's memory that a new allocation could
+// not get, as a percentage. Absent unless both readings are present,
+// because a percentage derived from one of them is a guess.
+//
+// Derived from MemAvailable rather than measured, deliberately, so that
+// this and AvailableBytes are two renderings of one observation and a
+// gauge can never disagree with the byte sensor beside it. It follows
+// that this is not "used" in the sense free(1) prints: reclaimable page
+// cache counts as available here, so a node that has just pulled a
+// 60 GB model reads far calmer than its resident-set accounting would.
+// That is the intended reading — the question being asked is how close
+// the next allocation is to failing, not where the bytes went.
+func (m Memory) UsedPct() *float64 {
+	if m.TotalBytes == nil || m.AvailableBytes == nil || *m.TotalBytes <= 0 {
+		return nil
+	}
+	pct := float64(*m.TotalBytes-*m.AvailableBytes) / float64(*m.TotalBytes) * 100
+	return &pct
 }
 
 // MemInfoPath is the file read. Overridable so the parser can be tested

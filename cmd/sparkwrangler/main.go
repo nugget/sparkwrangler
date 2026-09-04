@@ -39,8 +39,26 @@ func run(args []string) error {
 	}
 	log := newLogger(cfg.LogLevel)
 
+	// Probed once, before the device record is built: the connection has
+	// to be in the retained discovery message, which is published from
+	// the broker's connect callback inside NewMQTT below. A MAC found
+	// later would never reach Home Assistant on this run.
+	mac, err := host.PrimaryMAC(cfg.NetInterface)
+	if err != nil {
+		log.Warn("could not read the ethernet MAC", "interface", cfg.NetInterface, "error", err)
+	}
+	if mac == "" {
+		log.Debug("no ethernet MAC to publish; the device will not link to others for this machine")
+	}
+
 	publisher.Device = hadiscovery.Device{
-		Name:         firstNonEmpty(cfg.NodeName, cfg.NodeID),
+		Name: firstNonEmpty(cfg.NodeName, cfg.NodeID),
+		// The connection, not the sensor, is what makes Home Assistant
+		// treat this device and whatever its DHCP or router integration
+		// knows as one machine. Omitted entirely when unknown, because a
+		// wrong address links this node's sensors onto somebody else's
+		// device page.
+		Connections:  macConnections(mac),
 		Manufacturer: "NVIDIA",
 		Model:        cfg.DeviceModel,
 		SWVersion:    hadiscovery.Version,
@@ -94,10 +112,20 @@ func run(args []string) error {
 		"vllm", firstNonEmpty(cfg.VLLMURL, "none (worker mode)"),
 		"broker", cfg.BrokerURL,
 		"interval", cfg.Interval,
+		"mac", firstNonEmpty(mac, "none"),
 		"watchdog", sdnotify.WatchdogInterval(),
 		"systemd", sd.Enabled(),
 	)
-	return poll(ctx, cfg, mq, sd, log)
+	return poll(ctx, cfg, mq, sd, mac, log)
+}
+
+// macConnections renders the device-registry connection list, or nil
+// when there is no address to claim.
+func macConnections(mac string) [][2]string {
+	if mac == "" {
+		return nil
+	}
+	return [][2]string{{"mac", mac}}
 }
 
 // watchdogTick returns the ticker period for the poll loop.
@@ -143,7 +171,7 @@ func statusLine(s publisher.State) string {
 	return line
 }
 
-func poll(ctx context.Context, cfg config.Config, mq *publisher.MQTT, sd *sdnotify.Notifier, log *slog.Logger) error {
+func poll(ctx context.Context, cfg config.Config, mq *publisher.MQTT, sd *sdnotify.Notifier, mac string, log *slog.Logger) error {
 	var vc *vllm.Client
 	if !cfg.WorkerMode() {
 		vc = vllm.NewClient(cfg.VLLMURL, cfg.VLLMTimeout)
@@ -164,7 +192,7 @@ func poll(ctx context.Context, cfg config.Config, mq *publisher.MQTT, sd *sdnoti
 		// Published before the first tick so a restarted daemon does not
 		// leave a device of unknowns for a whole interval.
 		if !now.Before(nextPublish) {
-			state, reading := observe(ctx, vc, accel, prev, now.Sub(prevAt), log)
+			state, reading := observe(ctx, vc, accel, prev, now.Sub(prevAt), mac, log)
 			if err := mq.PublishState(state); err != nil {
 				log.Error("publish failed", "error", err)
 			}
@@ -206,6 +234,7 @@ func observe(
 	accel gpu.Reader,
 	prev *vllm.Reading,
 	elapsed time.Duration,
+	mac string,
 	log *slog.Logger,
 ) (publisher.State, vllm.Reading) {
 	var reading vllm.Reading
@@ -231,7 +260,12 @@ func observe(
 		log.Warn("host memory read failed", "error", err)
 	} else {
 		state.MemoryAvailableBytes = m.AvailableBytes
+		state.MemoryUsedPct = m.UsedPct()
 	}
+
+	// Carried rather than re-probed each cycle: it is an identity, not a
+	// reading, and it is already in the retained discovery message.
+	state.MACAddress = mac
 
 	return state, reading
 }

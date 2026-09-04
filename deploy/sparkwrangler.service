@@ -67,7 +67,8 @@ PrivateTmp=yes
 # takes on unified-memory hardware — and because a missing meminfo is
 # treated as "this platform does not publish it", the sensor would go
 # quietly blank forever rather than failing. Do not add it back to win
-# 0.1 of exposure.
+# 0.1 of exposure. It would now also hide /proc/net/route, which is how
+# the daemon picks which interface's MAC identifies this node.
 ProtectProc=invisible
 ReadWritePaths=
 
@@ -121,6 +122,14 @@ MemoryDenyWriteExecute=yes
 
 # --- network ----------------------------------------------------------
 # It speaks HTTP to a local vLLM and MQTT to a broker.
+#
+# AF_NETLINK is deliberately not here, and the daemon is written around
+# its absence: Go's net.Interfaces opens an AF_NETLINK socket, so the
+# obvious way to read this node's MAC address works when run by hand and
+# fails under this unit. The address comes from /sys/class/net instead,
+# which needs no address family at all. Adding AF_NETLINK to make a
+# future stdlib call work would widen the sandbox to buy back something
+# sysfs already gives for free.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
 # --- resources --------------------------------------------------------

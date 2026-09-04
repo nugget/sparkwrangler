@@ -45,6 +45,19 @@ type State struct {
 	GPUTemperatureC      *float64 `json:"gpu_temperature_c,omitempty"`
 	GPUPowerW            *float64 `json:"gpu_power_w,omitempty"`
 	MemoryAvailableBytes *int64   `json:"memory_available_bytes,omitempty"`
+	// MemoryUsedPct is the same observation as MemoryAvailableBytes in
+	// the form a gauge card can draw, rather than a second reading that
+	// could disagree with it. Absent whenever either half of the
+	// division is, because a percentage of an unknown total is a guess
+	// with a plausible-looking number attached.
+	MemoryUsedPct *float64 `json:"memory_used_pct,omitempty"`
+
+	// MACAddress is republished every cycle although it never changes.
+	// It costs twenty bytes, and the alternative — publishing it only in
+	// the retained discovery message — leaves the sensor unknown on any
+	// Home Assistant that reloads the integration without the device
+	// being rediscovered.
+	MACAddress string `json:"mac_address,omitempty"`
 
 	LastSeen string `json:"last_seen"`
 }

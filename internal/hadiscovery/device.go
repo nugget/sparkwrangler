@@ -13,15 +13,26 @@ import "fmt"
 
 // Device is the physical node, as Home Assistant will file it.
 type Device struct {
-	Identifiers  []string `json:"ids"`
-	Name         string   `json:"name"`
-	Manufacturer string   `json:"mf,omitempty"`
-	Model        string   `json:"mdl,omitempty"`
-	ModelID      string   `json:"mdl_id,omitempty"`
-	SWVersion    string   `json:"sw,omitempty"`
-	HWVersion    string   `json:"hw,omitempty"`
-	SerialNumber string   `json:"sn,omitempty"`
-	ConfigURL    string   `json:"cu,omitempty"`
+	Identifiers []string `json:"ids"`
+	// Connections is how Home Assistant folds this device together with
+	// the one another integration already has for the same machine. Each
+	// entry is a [type, identifier] pair; the type that matters here is
+	// "mac", which the DHCP, router and device-tracker integrations all
+	// register their devices under.
+	//
+	// This, not the MAC sensor, is the mechanism. An entity holding the
+	// address is something an operator can read; a matching connection
+	// is what makes the two device records one, so the vLLM sensors and
+	// whatever else knows this machine end up on a single page.
+	Connections  [][2]string `json:"cns,omitempty"`
+	Name         string      `json:"name"`
+	Manufacturer string      `json:"mf,omitempty"`
+	Model        string      `json:"mdl,omitempty"`
+	ModelID      string      `json:"mdl_id,omitempty"`
+	SWVersion    string      `json:"sw,omitempty"`
+	HWVersion    string      `json:"hw,omitempty"`
+	SerialNumber string      `json:"sn,omitempty"`
+	ConfigURL    string      `json:"cu,omitempty"`
 }
 
 // Origin names the software that published the discovery, which is what
