@@ -18,6 +18,7 @@ import (
 	"github.com/nugget/sparkrustler/internal/hadiscovery"
 	"github.com/nugget/sparkrustler/internal/host"
 	"github.com/nugget/sparkrustler/internal/publisher"
+	"github.com/nugget/sparkrustler/internal/sdnotify"
 	"github.com/nugget/sparkrustler/internal/vllm"
 )
 
@@ -62,6 +63,15 @@ func run(args []string) error {
 	}
 	defer mq.Close()
 
+	sd := sdnotify.New()
+	defer func() { _ = sd.Close() }()
+	// Announced here rather than at the top of main: readiness under
+	// Type=notify means the broker connection exists, which is the only
+	// state in which this service does anything for anyone.
+	if err := sd.Ready(); err != nil {
+		log.Warn("could not signal readiness", "error", err)
+	}
+
 	// SIGTERM as well as SIGINT: systemd sends the former, and without
 	// it a stopped unit would skip the offline publish and leave its
 	// device showing online until the will eventually fired.
@@ -73,32 +83,91 @@ func run(args []string) error {
 		"vllm", cfg.VLLMURL,
 		"broker", cfg.BrokerURL,
 		"interval", cfg.Interval,
+		"watchdog", sdnotify.WatchdogInterval(),
+		"systemd", sd.Enabled(),
 	)
-	return poll(ctx, cfg, mq, log)
+	return poll(ctx, cfg, mq, sd, log)
 }
 
-func poll(ctx context.Context, cfg config.Config, mq *publisher.MQTT, log *slog.Logger) error {
+// watchdogTick returns the ticker period for the poll loop.
+//
+// When systemd's watchdog is enabled and its deadline is tighter than
+// the publish interval, the loop runs at the watchdog's pace and
+// publishes only on the cycles that are due. The alternative — pinging
+// from a separate goroutine — would keep a service alive precisely when
+// its poll loop had wedged, which is the failure the watchdog exists to
+// catch.
+func watchdogTick(interval, watchdog time.Duration) time.Duration {
+	if watchdog > 0 && watchdog < interval {
+		return watchdog
+	}
+	return interval
+}
+
+// statusLine is what systemctl status shows. It answers the question an
+// operator opening it actually has, which is never "is the process
+// running" — systemd already said that — but "is it getting anywhere".
+func statusLine(s publisher.State) string {
+	if !s.VLLMUp {
+		return "vLLM unreachable"
+	}
+	line := "serving " + s.Model
+	if s.RequestsRunning != nil {
+		line += fmt.Sprintf(", %d running", *s.RequestsRunning)
+	}
+	if s.RequestsWaiting != nil && *s.RequestsWaiting > 0 {
+		line += fmt.Sprintf(", %d waiting", *s.RequestsWaiting)
+	}
+	if s.KVCacheUsagePct != nil {
+		line += fmt.Sprintf(", KV %.1f%%", *s.KVCacheUsagePct)
+	}
+	return line
+}
+
+func poll(ctx context.Context, cfg config.Config, mq *publisher.MQTT, sd *sdnotify.Notifier, log *slog.Logger) error {
 	vc := vllm.NewClient(cfg.VLLMURL, cfg.VLLMTimeout)
 	var accel gpu.Reader = gpu.NvidiaSMI{Path: cfg.NvidiaSMIPath}
 
-	ticker := time.NewTicker(cfg.Interval)
+	tick := watchdogTick(cfg.Interval, sdnotify.WatchdogInterval())
+	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
 	var prev *vllm.Reading
 	prevAt := time.Now()
+	var nextPublish time.Time
 
 	for {
+		now := time.Now()
+
 		// Published before the first tick so a restarted daemon does not
 		// leave a device of unknowns for a whole interval.
-		now := time.Now()
-		state, reading := observe(ctx, vc, accel, prev, now.Sub(prevAt), log)
-		if err := mq.PublishState(state); err != nil {
-			log.Error("publish failed", "error", err)
+		if !now.Before(nextPublish) {
+			state, reading := observe(ctx, vc, accel, prev, now.Sub(prevAt), log)
+			if err := mq.PublishState(state); err != nil {
+				log.Error("publish failed", "error", err)
+			}
+			if err := sd.Status("%s", statusLine(state)); err != nil {
+				log.Debug("could not set status", "error", err)
+			}
+			prev, prevAt = &reading, now
+			nextPublish = now.Add(cfg.Interval)
 		}
-		prev, prevAt = &reading, now
+
+		// Sent from the work loop, after the work: it attests that this
+		// loop completed a pass, which is the only thing worth
+		// attesting.
+		if err := sd.Watchdog(); err != nil {
+			log.Debug("watchdog ping failed", "error", err)
+		}
 
 		select {
 		case <-ctx.Done():
+			// Before the offline publish, so systemd counts the stop as
+			// deliberate and measures TimeoutStopSec from here rather
+			// than from the signal.
+			if err := sd.Stopping(); err != nil {
+				log.Debug("could not signal stopping", "error", err)
+			}
 			log.Info("shutting down")
 			return nil
 		case <-ticker.C:

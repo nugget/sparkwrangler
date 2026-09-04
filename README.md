@@ -26,6 +26,8 @@ everything else is stdlib, including the Prometheus parser.
 | State payload and derived rates | done |
 | Discovery/state contract tests | done |
 | MQTT transport, LWT, reconnect | done |
+| sd_notify: readiness, status, watchdog | done, stdlib |
+| Hardened unit | done, 1.6 OK, verified on DGX OS |
 | GPU adapter (nvidia-smi) | done, tolerates `[N/A]` fields |
 | Host memory adapter | done |
 | Config, daemon, systemd unit | done |
@@ -35,24 +37,59 @@ everything else is stdlib, including the Prometheus parser.
 
 ```sh
 just build-node                       # linux/arm64, which is what a Spark is
-scp dist/sparkrustler-linux-arm64 <node>:/usr/local/bin/sparkrustler
-scp deploy/sparkrustler.service <node>:/etc/systemd/system/
+scp dist/sparkrustler-linux-arm64 <node>:/tmp/sparkrustler
+scp deploy/sparkrustler.service deploy/sparkrustler.env.example <node>:/tmp/
 ```
 
-Settings come from flags or `SPARKRUSTLER_`-prefixed environment
-variables; the unit reads `/etc/sparkrustler.env` so the broker password
-stays out of a world-readable unit file.
+On the node:
 
 ```sh
-sparkrustler \
-  -node-id spark-a23e \
-  -vllm-url http://localhost:8000 \
-  -broker tcp://mqtt.example.net:1883 \
-  -device-model "DGX Spark (GB10)"
+sudo install -m0755 /tmp/sparkrustler /usr/local/bin/sparkrustler
+sudo install -m0644 /tmp/sparkrustler.service /etc/systemd/system/
+sudo install -m0600 /tmp/sparkrustler.env.example /etc/sparkrustler.env
+sudo systemctl daemon-reload && sudo systemctl enable --now sparkrustler
 ```
 
 Run one per node. Each publishes its own device, and Home Assistant
 assembles them.
+
+## The unit
+
+`Type=notify`, not `Type=simple`. The daemon signals readiness once the
+broker connection exists, reports what it is doing through `STATUS`, and
+pings the watchdog **from inside its work loop** — a ping from a separate
+goroutine would prove only that the goroutine lives, which is exactly the
+state a wedged poll loop would be in. `systemctl status` therefore reads
+like this rather than "active (running)":
+
+```
+Status: "serving Qwen/Qwen3.5-122B-A10B-FP8, 4 running, 2 waiting, KV 88.5%"
+```
+
+The protocol is implemented in `internal/sdnotify` against the documented
+wire format — a datagram of key=value pairs — rather than taken as a
+dependency, and degrades to a no-op outside systemd.
+
+Hardening scores **1.6 OK** on `systemd-analyze security`, systemd's best
+band. Verify after any edit:
+
+```sh
+just unit-check
+```
+
+Two settings in it are load-bearing and counterintuitive, both found by
+testing on real hardware rather than by reading documentation:
+
+**`DeviceAllow=` entries are `rw`, not `r`.** NVML opens the device nodes
+read-write even to answer a read-only query. With read-only entries
+`nvidia-smi` fails with `Failed to initialize NVML: Unknown Error`, and
+every accelerator sensor goes blank.
+
+**`ProcSubset=pid` is deliberately absent.** It improves the hardening
+score and hides `/proc/meminfo` — the single most important reading on
+unified-memory hardware. Because a missing meminfo is indistinguishable
+from a platform that does not publish one, the sensor would go quietly
+blank forever rather than failing.
 
 ## Why these sensors
 
@@ -119,6 +156,7 @@ good values forward would leave a calm dashboard over a dead server.
 | `internal/gpu` | accelerator adapters; `nvidia-smi` today |
 | `internal/host` | host memory, which on unified memory is the number that matters |
 | `internal/config` | flags and environment |
+| `internal/sdnotify` | systemd readiness, status and watchdog protocol |
 | `deploy/` | systemd unit |
 
 ## Tests

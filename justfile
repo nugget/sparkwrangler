@@ -29,3 +29,8 @@ fmt-check:
 # disappearing metric is the thing this fixture exists to catch.
 refresh-fixture url:
     curl -s {{url}}/metrics | grep -E '^(#|vllm:)' > internal/vllm/testdata/live-scrape.txt
+
+# Lint the unit file. Run on a systemd host; needs no root.
+unit-check:
+    systemd-analyze verify deploy/sparkrustler.service
+    systemd-analyze security deploy/sparkrustler.service

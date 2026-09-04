@@ -1,41 +1,138 @@
-# Install to /etc/systemd/system/sparkrustler.service
+# sparkrustler — vLLM node telemetry to Home Assistant over MQTT
 #
-# Settings live in /etc/sparkrustler.env so the broker password is not in
-# the unit file, which is world-readable:
+#   install -m0755 sparkrustler /usr/local/bin/sparkrustler
+#   install -m0644 sparkrustler.service /etc/systemd/system/
+#   install -m0600 sparkrustler.env /etc/sparkrustler.env
+#   systemctl daemon-reload && systemctl enable --now sparkrustler
 #
-#   SPARKRUSTLER_BROKER=tcp://mqtt.example.net:1883
-#   SPARKRUSTLER_USERNAME=sparkrustler
-#   SPARKRUSTLER_PASSWORD=...
-#   SPARKRUSTLER_DEVICE_MODEL=DGX Spark (GB10)
+# Verify the hardening after any edit:
 #
-#   chown root:root /etc/sparkrustler.env && chmod 600 /etc/sparkrustler.env
+#   systemd-analyze security sparkrustler.service
 
 [Unit]
-Description=sparkrustler — vLLM node telemetry to Home Assistant
+Description=vLLM node telemetry to Home Assistant over MQTT
 Documentation=https://github.com/nugget/sparkrustler
+
+# network-online rather than network: the first act after start is to
+# dial a broker, and Wants= is required for the target to be pulled in.
 After=network-online.target
 Wants=network-online.target
 
+# Ordering only, not a dependency. The daemon publishes vLLM as down when
+# it cannot reach it, which is a reading worth having, so it must not
+# refuse to start on a node whose engine is stopped.
+After=docker.service
+
+# A broker down for an hour should not be met with an hour of restarts;
+# give up after five failures in five minutes and let a human or a
+# monitor notice. These are [Unit] keys — systemd ignores them in
+# [Service] with only a warning from systemd-analyze verify.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
 [Service]
-Type=simple
+# The daemon signals readiness once the broker connection is up, reports
+# what it is doing through STATUS, and pings the watchdog from inside its
+# work loop. A Type=simple unit would call a wedged poll loop healthy for
+# as long as the process happened to stay alive.
+Type=notify
+NotifyAccess=main
+WatchdogSec=60
+
 EnvironmentFile=/etc/sparkrustler.env
 ExecStart=/usr/local/bin/sparkrustler
-Restart=always
-RestartSec=10
 
-# SIGTERM is handled: the daemon publishes an explicit offline before
-# disconnecting, because a clean shutdown does not fire the MQTT will.
+Restart=always
+RestartSec=10s
+
+# SIGTERM is handled: it publishes an explicit offline before
+# disconnecting, because a clean shutdown never fires the MQTT will.
 KillSignal=SIGTERM
 TimeoutStopSec=20
 
-# It reads /proc and execs nvidia-smi; it needs nothing else.
+# --- identity ---------------------------------------------------------
+# No account to create, no uid to choose, nothing left behind on
+# uninstall. The daemon owns no state.
 DynamicUser=yes
+
+# --- filesystem -------------------------------------------------------
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+# Other processes' /proc entries are hidden; /proc/meminfo is not, and
+# must not be.
+#
+# ProcSubset=pid is deliberately absent. It scores better and it hides
+# /proc/meminfo, which is the single most important reading this daemon
+# takes on unified-memory hardware — and because a missing meminfo is
+# treated as "this platform does not publish it", the sensor would go
+# quietly blank forever rather than failing. Do not add it back to win
+# 0.1 of exposure.
+ProtectProc=invisible
+ReadWritePaths=
+
+# --- privilege --------------------------------------------------------
 NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# The daemon creates no files. Set anyway, because "it does not do that
+# today" is the premise that ages worst.
+UMask=0077
+
+# --- kernel -----------------------------------------------------------
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+
+# --- devices ----------------------------------------------------------
+# nvidia-smi needs the control node and the GPU itself, and nothing else.
+# PrivateDevices=yes would be tidier and would silently break the
+# accelerator sensors, which is the failure mode this whole project is
+# written to avoid.
+#
+# Named by device group rather than by /dev/nvidia0, so a host with more
+# than one GPU works without editing the unit. The groups come from
+# /proc/devices; nvidia-modeset and nvidia-nvswitch are deliberately not
+# listed, because querying does not need them.
+#
+# Read-write, counterintuitively, and verified rather than assumed: NVML
+# opens these nodes O_RDWR even to answer a read-only query, and with
+# read-only entries nvidia-smi fails with "Failed to initialize NVML:
+# Unknown Error". Narrowing these to r looks obviously correct and
+# silently costs every accelerator sensor.
+PrivateDevices=no
+DevicePolicy=closed
+DeviceAllow=char-nvidia rw
+DeviceAllow=char-nvidiactl rw
+DeviceAllow=char-nvidia-uvm rw
+
+# --- syscalls and memory ---------------------------------------------
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=yes
+
+# --- network ----------------------------------------------------------
+# It speaks HTTP to a local vLLM and MQTT to a broker.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# --- resources --------------------------------------------------------
+# Generous for a daemon whose largest allocation is a metrics scrape, and
+# small enough that a leak here can never be the thing that starves a
+# node's unified memory pool.
 MemoryMax=128M
+TasksMax=32
+# Never the reason a model load fails for want of CPU.
+Nice=10
+CPUWeight=20
+IOWeight=20
 
 [Install]
 WantedBy=multi-user.target
