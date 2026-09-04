@@ -26,6 +26,19 @@ type NvidiaSMI struct {
 
 func (n NvidiaSMI) Name() string { return "nvidia-smi" }
 
+// power.draw is the GPU rail alone, and there is nothing broader to ask
+// for. On GB10 (driver 580.173.02) `nvidia-smi -q -d POWER` reports GPU
+// Power Readings and marks everything else N/A — Module Power Readings,
+// GPU Memory Power Readings, and every power limit, so power.management
+// reads [N/A] and there is no budget to compare a draw against either.
+// The host exposes no alternative: no hwmon power or current rails, no
+// tegrastats. Module and node power are simply not observable here, and
+// a wall meter is the only way to get them.
+//
+// power.draw.average and power.draw.instant were within 0.2 W of each
+// other when this was checked, so the averaging window is not worth
+// querying around.
+//
 // query is fixed rather than configurable so the field order and the
 // parsing below cannot drift apart.
 const smiQuery = "utilization.gpu,clocks.sm,temperature.gpu,power.draw"
