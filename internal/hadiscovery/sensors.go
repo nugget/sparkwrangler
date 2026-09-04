@@ -9,6 +9,18 @@ const Version = "0.1.0"
 func intPtr(v int) *int    { return &v }
 func boolPtr(v bool) *bool { return &v }
 
+// optionalBinary renders a boolean that may be absent from the state
+// payload.
+//
+// The obvious template — {{ 'ON' if value_json.x else 'OFF' }} — is
+// wrong for exactly the case this exists to handle: an undefined key is
+// falsey in Jinja, so a reading nobody took renders as OFF and the
+// sensor confidently reports the opposite of unknown. The definedness
+// check has to come first.
+func optionalBinary(key string) string {
+	return fmt.Sprintf("{{ None if value_json.%s is not defined else ('ON' if value_json.%s else 'OFF') }}", key, key)
+}
+
 // optional renders a value that may be absent from the state payload.
 // A missing key would otherwise render as an empty string, which Home
 // Assistant stores as a state of "" rather than as unknown; default(None)
@@ -68,7 +80,7 @@ func vllmSensors(uid func(string) string) map[string]Component {
 			Name:          "vLLM",
 			UniqueID:      uid("vllm_running"),
 			DeviceClass:   "running",
-			ValueTemplate: "{{ 'ON' if value_json.vllm_up else 'OFF' }}",
+			ValueTemplate: optionalBinary("vllm_up"),
 			PayloadOn:     "ON",
 			PayloadOff:    "OFF",
 			Icon:          "mdi:server",
@@ -187,7 +199,7 @@ func vllmSensors(uid func(string) string) map[string]Component {
 			Platform:       "binary_sensor",
 			Name:           "Prefix caching",
 			UniqueID:       uid("prefix_caching"),
-			ValueTemplate:  "{{ 'ON' if value_json.prefix_caching_enabled else 'OFF' }}",
+			ValueTemplate:  optionalBinary("prefix_caching_enabled"),
 			PayloadOn:      "ON",
 			PayloadOff:     "OFF",
 			EntityCategory: "diagnostic",

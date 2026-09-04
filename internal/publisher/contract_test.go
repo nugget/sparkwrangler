@@ -248,3 +248,77 @@ func TestEveryComponentComposesItsName(t *testing.T) {
 		}
 	}
 }
+
+// TestUnobservedPrefixCachingIsAbsentNotFalse pins the third instance of
+// this project's one recurring bug. The engine reports prefix caching in
+// a cache_config_info label; when /metrics is unreachable or the label is
+// missing, a plain bool stays false and gets republished as though
+// somebody had looked. False here means prefix caching is switched off,
+// which is a materially different claim from nobody having said.
+func TestUnobservedPrefixCachingIsAbsentNotFalse(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		observed    *bool
+		wantPresent bool
+		wantValue   bool
+	}{
+		{name: "reported on", observed: ptrOf(true), wantPresent: true, wantValue: true},
+		{name: "reported off", observed: ptrOf(false), wantPresent: true, wantValue: false},
+		{name: "never reported", observed: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := FromVLLM(vllm.Reading{Up: true, Model: "m", PrefixCachingOn: tt.observed}, nil, 0)
+
+			raw, err := json.Marshal(s)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var decoded map[string]any
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+
+			got, present := decoded["prefix_caching_enabled"]
+			if present != tt.wantPresent {
+				t.Fatalf("present = %v, want %v (value %v)", present, tt.wantPresent, got)
+			}
+			if tt.wantPresent && got != tt.wantValue {
+				t.Errorf("prefix_caching_enabled = %v, want %v", got, tt.wantValue)
+			}
+		})
+	}
+}
+
+// TestBinarySensorsDistinguishMissingFromFalse pins the template half.
+// Omitting a key achieves nothing on its own: an undefined key is falsey
+// in Jinja, so the obvious template renders OFF for a reading nobody
+// took and the sensor reports the opposite of unknown with confidence.
+//
+// Checked across every binary_sensor rather than the two that exist
+// today, so a sensor added later cannot reintroduce it.
+func TestBinarySensorsDistinguishMissingFromFalse(t *testing.T) {
+	t.Parallel()
+
+	for id, c := range hadiscovery.Sensors("spark-01", true) {
+		if c.Platform != "binary_sensor" {
+			continue
+		}
+		t.Run(id, func(t *testing.T) {
+			if !strings.Contains(c.ValueTemplate, "is not defined") {
+				t.Errorf("binary sensor %q renders an undefined key as OFF rather than unavailable:\n  %s",
+					id, c.ValueTemplate)
+			}
+			// The definedness check has to come before the truth test,
+			// or the falsey undefined value is consumed first.
+			defined := strings.Index(c.ValueTemplate, "is not defined")
+			on := strings.Index(c.ValueTemplate, "'ON'")
+			if on >= 0 && defined > on {
+				t.Errorf("binary sensor %q tests truth before definedness:\n  %s", id, c.ValueTemplate)
+			}
+		})
+	}
+}

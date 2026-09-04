@@ -65,9 +65,12 @@ func WorkerState() State {
 // total since the engine started is not that.
 func FromVLLM(r vllm.Reading, prev *vllm.Reading, elapsed time.Duration) State {
 	s := State{
-		VLLMUp:               &r.Up,
-		Model:                r.Model,
-		PrefixCachingEnabled: &r.PrefixCachingOn,
+		VLLMUp: &r.Up,
+		Model:  r.Model,
+		// Carried only when the engine reported it. Assigning
+		// unconditionally would republish the zero value as though it
+		// were an observation.
+		PrefixCachingEnabled: r.PrefixCachingOn,
 		LastSeen:             time.Now().UTC().Format(time.RFC3339),
 	}
 	if !r.Up {
