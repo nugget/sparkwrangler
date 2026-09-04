@@ -102,12 +102,12 @@ func TestUniqueIDsAreUnique(t *testing.T) {
 	t.Parallel()
 
 	seen := map[string]string{}
-	for id, c := range hadiscovery.Sensors("spark-a23e") {
+	for id, c := range hadiscovery.Sensors("spark-01") {
 		if c.UniqueID == "" {
 			t.Errorf("component %q has no unique id", id)
 			continue
 		}
-		if !strings.HasPrefix(c.UniqueID, "spark-a23e_") {
+		if !strings.HasPrefix(c.UniqueID, "spark-01_") {
 			t.Errorf("component %q unique id %q is not namespaced by node", id, c.UniqueID)
 		}
 		if prev, dup := seen[c.UniqueID]; dup {

@@ -32,6 +32,12 @@ type Config struct {
 	TopicPrefix     string
 	QoS             int
 
+	CAFile      string
+	CertFile    string
+	KeyFile     string
+	TLSServer   string
+	TLSInsecure bool
+
 	Interval time.Duration
 
 	NvidiaSMIPath string
@@ -46,7 +52,7 @@ func Load(args []string) (Config, error) {
 	fs := flag.NewFlagSet("sparkwrangler", flag.ContinueOnError)
 
 	hostname, _ := os.Hostname()
-	// Only the short name: a node identified as spark-a23e.example.net
+	// Only the short name: a node identified as spark-01.example.net
 	// produces entity ids carrying dots, which are legal and unpleasant.
 	if i := strings.Index(hostname, "."); i > 0 {
 		hostname = hostname[:i]
@@ -57,13 +63,18 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&c.NodeName, "node-name", env("NODE_NAME", ""), "display name in Home Assistant (default: node id)")
 	fs.StringVar(&c.VLLMURL, "vllm-url", env("VLLM_URL", "http://localhost:8000"), "base URL of the vLLM server on this node")
 	fs.DurationVar(&c.VLLMTimeout, "vllm-timeout", envDuration("VLLM_TIMEOUT", 5*time.Second), "per-request timeout for vLLM reads")
-	fs.StringVar(&c.BrokerURL, "broker", env("BROKER", "tcp://localhost:1883"), "MQTT broker URL")
+	fs.StringVar(&c.BrokerURL, "broker", env("BROKER", "tcp://localhost:1883"), "MQTT broker URL: mqtts:// for TLS, tcp:// for plaintext")
 	fs.StringVar(&c.ClientID, "client-id", env("CLIENT_ID", ""), "MQTT client id (default: sparkwrangler-<node id>)")
 	fs.StringVar(&c.Username, "username", env("USERNAME", ""), "MQTT username")
 	fs.StringVar(&c.Password, "password", env("PASSWORD", ""), "MQTT password; prefer the environment over the command line")
 	fs.StringVar(&c.DiscoveryPrefix, "discovery-prefix", env("DISCOVERY_PREFIX", "homeassistant"), "Home Assistant discovery topic prefix")
 	fs.StringVar(&c.TopicPrefix, "topic-prefix", env("TOPIC_PREFIX", "sparkwrangler"), "topic prefix for state and availability")
 	fs.IntVar(&c.QoS, "qos", envInt("QOS", 1), "MQTT QoS for published messages")
+	fs.StringVar(&c.CAFile, "ca-file", env("CA_FILE", ""), "PEM bundle to verify the broker against; needed for a private or self-signed CA")
+	fs.StringVar(&c.CertFile, "tls-cert", env("TLS_CERT", ""), "client certificate for mutual TLS")
+	fs.StringVar(&c.KeyFile, "tls-key", env("TLS_KEY", ""), "client key for mutual TLS")
+	fs.StringVar(&c.TLSServer, "tls-servername", env("TLS_SERVERNAME", ""), "name to verify against the broker certificate, when it differs from the URL host")
+	fs.BoolVar(&c.TLSInsecure, "tls-insecure", envBool("TLS_INSECURE", false), "skip broker certificate verification; for debugging a first connection only")
 	fs.DurationVar(&c.Interval, "interval", envDuration("INTERVAL", 15*time.Second), "how often to publish state")
 	fs.StringVar(&c.NvidiaSMIPath, "nvidia-smi", env("NVIDIA_SMI", ""), "path to nvidia-smi (default: resolve on PATH)")
 	fs.StringVar(&c.DeviceModel, "device-model", env("DEVICE_MODEL", ""), "hardware model shown in Home Assistant")
@@ -93,6 +104,13 @@ func (c Config) validate() error {
 
 func env(name, fallback string) string {
 	if v, ok := os.LookupEnv("SPARKWRANGLER_" + name); ok {
+		return v
+	}
+	return fallback
+}
+
+func envBool(name string, fallback bool) bool {
+	if v, err := strconv.ParseBool(env(name, "")); err == nil {
 		return v
 	}
 	return fallback

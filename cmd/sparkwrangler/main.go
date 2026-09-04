@@ -56,7 +56,14 @@ func run(args []string) error {
 		DiscoveryPrefix: cfg.DiscoveryPrefix,
 		TopicPrefix:     cfg.TopicPrefix,
 		QoS:             byte(cfg.QoS),
-		Logger:          log,
+		TLS: publisher.TLSOptions{
+			CAFile:     cfg.CAFile,
+			CertFile:   cfg.CertFile,
+			KeyFile:    cfg.KeyFile,
+			ServerName: cfg.TLSServer,
+			Insecure:   cfg.TLSInsecure,
+		},
+		Logger: log,
 	})
 	if err != nil {
 		return err
