@@ -14,6 +14,11 @@ linters:
   settings:
     godoclint:
       require-pkg-doc: true
+    misspell:
+      # Mosquitto is the MQTT broker and is spelled with two Ts. misspell
+      # reads it as the insect.
+      ignore-rules:
+        - Mosquitto
     errcheck:
       check-type-assertions: true
     staticcheck:

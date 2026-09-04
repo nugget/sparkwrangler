@@ -1,6 +1,7 @@
 package publisher
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -46,6 +47,11 @@ type MQTTOptions struct {
 	DiscoveryPrefix string
 	TopicPrefix     string
 
+	// TLS configures transport security. It applies only when BrokerURL
+	// names a TLS scheme, and setting it against a plaintext URL is an
+	// error rather than a no-op.
+	TLS TLSOptions
+
 	QoS    byte
 	Logger *slog.Logger
 }
@@ -61,6 +67,9 @@ func NewMQTT(opts MQTTOptions) (*MQTT, error) {
 	if opts.NodeID == "" {
 		return nil, fmt.Errorf("node id is required")
 	}
+	if err := ValidateBrokerURL(opts.BrokerURL); err != nil {
+		return nil, err
+	}
 	if opts.DiscoveryPrefix == "" {
 		opts.DiscoveryPrefix = "homeassistant"
 	}
@@ -73,6 +82,12 @@ func NewMQTT(opts MQTTOptions) (*MQTT, error) {
 	if opts.ClientID == "" {
 		opts.ClientID = "sparkwrangler-" + opts.NodeID
 	}
+
+	tlsConfig, err := buildTLSConfig(opts.BrokerURL, opts.TLS)
+	if err != nil {
+		return nil, err
+	}
+	warnIfCredentialsAreExposed(opts, tlsConfig)
 
 	p := &MQTT{
 		log:        opts.Logger.With("node", opts.NodeID),
@@ -93,6 +108,7 @@ func NewMQTT(opts MQTTOptions) (*MQTT, error) {
 		SetConnectRetryInterval(10*time.Second).
 		SetMaxReconnectInterval(2*time.Minute).
 		SetCleanSession(false).
+		SetTLSConfig(tlsConfig).
 		SetWill(p.availTopic, PayloadOffline, p.qos, true)
 
 	// Discovery is republished on every reconnect rather than only at
@@ -118,6 +134,28 @@ func NewMQTT(opts MQTTOptions) (*MQTT, error) {
 		return nil, fmt.Errorf("connect to %s: %w", opts.BrokerURL, err)
 	}
 	return p, nil
+}
+
+// warnIfCredentialsAreExposed says so when a password is about to cross
+// a plaintext link, and when verification has been switched off.
+//
+// Warned rather than refused: a broker on loopback is a legitimate
+// plaintext deployment, and this daemon is not in a position to know
+// which network it is on. What it can do is make sure the choice was
+// visible rather than inherited from a default.
+func warnIfCredentialsAreExposed(opts MQTTOptions, tlsConfig *tls.Config) {
+	if opts.Password != "" && !SchemeIsTLS(opts.BrokerURL) {
+		opts.Logger.Warn("broker password will be sent in the clear",
+			"broker", opts.BrokerURL,
+			"fix", "use an mqtts:// url",
+		)
+	}
+	if tlsConfig != nil && tlsConfig.InsecureSkipVerify {
+		opts.Logger.Warn("broker certificate will not be verified",
+			"broker", opts.BrokerURL,
+			"effect", "any host answering on this address is trusted",
+		)
+	}
 }
 
 // Announce publishes the retained discovery message and marks the node

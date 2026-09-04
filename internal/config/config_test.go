@@ -11,7 +11,7 @@ func TestLoadValidation(t *testing.T) {
 		args    []string
 		wantErr bool
 	}{
-		{name: "defaults are usable", args: []string{"-node-id", "spark-a23e"}},
+		{name: "defaults are usable", args: []string{"-node-id", "spark-01"}},
 		{
 			// Each interval is an HTTP scrape, an exec of nvidia-smi and
 			// a retained publish; sub-second polling costs more than it

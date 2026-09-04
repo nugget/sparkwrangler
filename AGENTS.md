@@ -73,6 +73,14 @@ in a design discussion before any code.
   no `/proc/meminfo`, no `nvidia-smi` — which is a state to publish, not
   an error to propagate to a loop that would log it every interval
   forever.
+- **A configuration that looks secure and is not must fail, not warn
+  quietly.** TLS options against a plaintext broker URL are an error;
+  a password against a plaintext URL is a startup warning naming the
+  fix. The rule is the same one as absent-is-not-zero: the dangerous
+  state is the one that looks fine.
+- **No operator's hostnames in the repo.** Examples use `spark-01` and
+  `mqtt.example.net`. This is a general tool, and someone's network
+  topology is not documentation.
 - **The systemd unit is part of the interface.** It is gated in CI and
   reviewed like code.
 
