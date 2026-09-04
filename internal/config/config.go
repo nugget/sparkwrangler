@@ -49,7 +49,16 @@ type Config struct {
 
 	NvidiaSMIPath string
 	DeviceModel   string
-	LogLevel      string
+	// NetInterface names the port whose MAC identifies this node, when
+	// the automatic choice is wrong. Empty selects the interface carrying
+	// the default route.
+	NetInterface string
+	// Area is the Home Assistant area to suggest for this node's device.
+	// It is the only remaining way to put this device beside the other
+	// records for the same machine, the registry having stopped merging
+	// them in 2026.8.
+	Area     string
+	LogLevel string
 }
 
 // Load parses flags, falling back to environment variables and then to
@@ -86,6 +95,8 @@ func Load(args []string) (Config, error) {
 	fs.DurationVar(&c.Interval, "interval", envDuration("INTERVAL", 15*time.Second), "how often to publish state")
 	fs.StringVar(&c.NvidiaSMIPath, "nvidia-smi", env("NVIDIA_SMI", ""), "path to nvidia-smi (default: resolve on PATH)")
 	fs.StringVar(&c.DeviceModel, "device-model", env("DEVICE_MODEL", ""), "hardware model shown in Home Assistant")
+	fs.StringVar(&c.NetInterface, "net-interface", env("NET_INTERFACE", ""), "interface whose MAC identifies this node (default: the one carrying the default route)")
+	fs.StringVar(&c.Area, "area", env("AREA", ""), "Home Assistant area to suggest for this node, so it lands beside the other devices for the same machine")
 	fs.StringVar(&c.LogLevel, "log-level", env("LOG_LEVEL", "info"), "debug, info, warn or error")
 
 	if err := fs.Parse(args); err != nil {

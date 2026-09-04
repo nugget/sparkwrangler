@@ -39,11 +39,43 @@ func run(args []string) error {
 	}
 	log := newLogger(cfg.LogLevel)
 
+	// Probed once, before the device record is built: the address has to
+	// be in the retained discovery message, which is published from the
+	// broker's connect callback inside NewMQTT below. A MAC found later
+	// would never reach Home Assistant on this run.
+	mac, err := host.PrimaryMAC(cfg.NetInterface)
+	if err != nil {
+		// An interface named explicitly is a promise the operator made,
+		// and a typo in it must not be absorbed. Automatic probing
+		// degrades instead: a host with no ethernet port is a state to
+		// publish nothing for, not a reason to refuse to report the GPU
+		// telemetry that is the point of the daemon.
+		if cfg.NetInterface != "" {
+			return err
+		}
+		log.Warn("could not read the ethernet MAC", "error", err)
+	}
+	if mac == "" {
+		log.Debug("no ethernet MAC to publish")
+	}
+
 	publisher.Device = hadiscovery.Device{
-		Name:         firstNonEmpty(cfg.NodeName, cfg.NodeID),
-		Manufacturer: "NVIDIA",
-		Model:        cfg.DeviceModel,
-		SWVersion:    hadiscovery.Version,
+		Name: firstNonEmpty(cfg.NodeName, cfg.NodeID),
+		// Records the node's hardware address in the device registry,
+		// which is the field that carries one. It does not merge this
+		// device with another integration's — see the Connections
+		// documentation for what changed in Home Assistant 2026.8.
+		// Omitted entirely when unknown rather than claimed empty.
+		Connections: macConnections(mac),
+		// The only field left that puts this device beside the other
+		// records for the same machine, now that the registry no longer
+		// folds them together. Honoured when Home Assistant first
+		// creates the device; a device an operator has since moved stays
+		// where they put it.
+		SuggestedArea: cfg.Area,
+		Manufacturer:  "NVIDIA",
+		Model:         cfg.DeviceModel,
+		SWVersion:     hadiscovery.Version,
 		// Deliberately not cfg.VLLMURL: that is loopback on every normal
 		// deployment, and Home Assistant renders it as a link, which
 		// would send whoever clicks it to their own machine.
@@ -94,10 +126,20 @@ func run(args []string) error {
 		"vllm", firstNonEmpty(cfg.VLLMURL, "none (worker mode)"),
 		"broker", cfg.BrokerURL,
 		"interval", cfg.Interval,
+		"mac", firstNonEmpty(mac, "none"),
 		"watchdog", sdnotify.WatchdogInterval(),
 		"systemd", sd.Enabled(),
 	)
-	return poll(ctx, cfg, mq, sd, log)
+	return poll(ctx, cfg, mq, sd, mac, log)
+}
+
+// macConnections renders the device-registry connection list, or nil
+// when there is no address to claim.
+func macConnections(mac string) [][2]string {
+	if mac == "" {
+		return nil
+	}
+	return [][2]string{{"mac", mac}}
 }
 
 // watchdogTick returns the ticker period for the poll loop.
@@ -143,7 +185,7 @@ func statusLine(s publisher.State) string {
 	return line
 }
 
-func poll(ctx context.Context, cfg config.Config, mq *publisher.MQTT, sd *sdnotify.Notifier, log *slog.Logger) error {
+func poll(ctx context.Context, cfg config.Config, mq *publisher.MQTT, sd *sdnotify.Notifier, mac string, log *slog.Logger) error {
 	var vc *vllm.Client
 	if !cfg.WorkerMode() {
 		vc = vllm.NewClient(cfg.VLLMURL, cfg.VLLMTimeout)
@@ -164,7 +206,7 @@ func poll(ctx context.Context, cfg config.Config, mq *publisher.MQTT, sd *sdnoti
 		// Published before the first tick so a restarted daemon does not
 		// leave a device of unknowns for a whole interval.
 		if !now.Before(nextPublish) {
-			state, reading := observe(ctx, vc, accel, prev, now.Sub(prevAt), log)
+			state, reading := observe(ctx, vc, accel, prev, now.Sub(prevAt), mac, log)
 			if err := mq.PublishState(state); err != nil {
 				log.Error("publish failed", "error", err)
 			}
@@ -206,6 +248,7 @@ func observe(
 	accel gpu.Reader,
 	prev *vllm.Reading,
 	elapsed time.Duration,
+	mac string,
 	log *slog.Logger,
 ) (publisher.State, vllm.Reading) {
 	var reading vllm.Reading
@@ -231,7 +274,12 @@ func observe(
 		log.Warn("host memory read failed", "error", err)
 	} else {
 		state.MemoryAvailableBytes = m.AvailableBytes
+		state.MemoryUsedPct = m.UsedPct()
 	}
+
+	// Carried rather than re-probed each cycle: it is an identity, not a
+	// reading, and it is already in the retained discovery message.
+	state.MACAddress = mac
 
 	return state, reading
 }

@@ -77,6 +77,8 @@ func populatedStateKeys(t *testing.T) map[string]bool {
 		GPUTemperatureC:           &f,
 		GPUPowerW:                 &f,
 		MemoryAvailableBytes:      &i64,
+		MemoryUsedPct:             &f,
+		MACAddress:                "02:00:00:00:00:01",
 		LastSeen:                  "now",
 	}
 
@@ -192,7 +194,7 @@ func TestWorkerModeDeclaresNoServingEntities(t *testing.T) {
 
 	// The accelerator and host readings matter just as much on a worker:
 	// it is doing the same work, on the same silicon.
-	for _, id := range []string{"gpu_utilization", "gpu_clock", "gpu_temperature", "gpu_power", "memory_available", "last_seen"} {
+	for _, id := range []string{"gpu_utilization", "gpu_clock", "gpu_temperature", "gpu_power", "memory_available", "memory_used", "mac_address", "last_seen"} {
 		if _, ok := worker[id]; !ok {
 			t.Errorf("worker is missing %q, which has nothing to do with serving", id)
 		}

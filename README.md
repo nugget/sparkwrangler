@@ -128,6 +128,44 @@ pool, so a large download competes with a resident model, and the
 failure is not a clean OOM — it is userspace starvation, where sshd
 accepts a connection and then cannot fork.
 
+**Memory used**, as a percentage, is that same reading in the form a
+gauge card can draw — derived from it rather than measured separately,
+so the two can never disagree. It is the share of memory a new
+allocation could not get, which is not what `free` calls used:
+reclaimable page cache counts as available, so a node that has just
+pulled a 60 GB model reads calmer here than its resident-set accounting
+would suggest. That is the intended reading. The question is how close
+the next allocation is to failing, not where the bytes went.
+
+**The MAC address** identifies this node as a machine Home Assistant may
+know by other means. It is published twice: as a `connections` entry in
+the device record, which is the registry's field for a hardware address,
+and as a diagnostic sensor.
+
+Be clear about what that does and does not buy, because it changed
+recently. Until Home Assistant 2026.8 a connection shared with another
+integration merged both records into one device. 2026.8 scoped
+identifiers and connections to a single config entry and split the prior
+composite devices, so **an MQTT device no longer merges with the one a
+DHCP or router integration has for the same host, and nothing in a
+discovery payload can make it.** Home Assistant offers no replacement —
+`via_device` is deprecated and child devices are unimplemented future
+work. The connection entry stays because it is still the correct field
+for the address and still what any future correlation would need; the
+sensor is the half that is useful today, since a template or automation
+can read it and correlate the two itself. `-area` suggests where the
+device lands, which is what actually puts it beside the other records
+for the same machine.
+
+The address is read from `/sys/class/net`, and the interface chosen is
+the one carrying the default route — a Spark has two QSFP fabric ports
+whose kernel names sort ahead of the RJ45 the house network sees, so
+"the first one" would publish an address nothing else has ever heard of.
+The route is followed even when it leaves over a bridge, bond or VLAN,
+which is filed as a virtual device and is nonetheless exactly the
+address the router sees. `-net-interface` overrides the choice, and a
+name that cannot be read stops startup rather than being absorbed.
+
 ## Design notes
 
 **Absent is not zero.** Every optional reading is a pointer, omitted from
@@ -170,7 +208,7 @@ good values forward would leave a calm dashboard over a dead server.
 | `internal/hadiscovery` | HA device discovery types and the sensor catalog |
 | `internal/publisher` | state payload, derived rates, MQTT transport |
 | `internal/gpu` | accelerator adapters; `nvidia-smi` today |
-| `internal/host` | host memory, which on unified memory is the number that matters |
+| `internal/host` | host memory, which on unified memory is the number that matters, and the network identity |
 | `internal/config` | flags and environment |
 | `internal/sdnotify` | systemd readiness, status and watchdog protocol |
 | `deploy/` | systemd unit |

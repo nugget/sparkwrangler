@@ -263,6 +263,39 @@ func hostSensors(uid func(string) string) map[string]Component {
 			StateClass:        "measurement",
 			Icon:              "mdi:memory",
 		},
+		"memory_used": {
+			// The gauge half of the reading above. Percent rather than
+			// bytes because a gauge card needs a fixed maximum, and the
+			// total memory of the node is not something Home Assistant
+			// is told anywhere else.
+			//
+			// No device class: Home Assistant has none that means "share
+			// of memory", and borrowing one that converts units would
+			// turn a percentage into something else.
+			Platform:          "sensor",
+			Name:              "Memory used",
+			UniqueID:          uid("memory_used"),
+			ValueTemplate:     optional("memory_used_pct"),
+			UnitOfMeasurement: "%",
+			StateClass:        "measurement",
+			DisplayPrecision:  intPtr(1),
+			Icon:              "mdi:memory",
+		},
+		"mac_address": {
+			// Diagnostic. Since Home Assistant 2026.8 stopped merging
+			// devices across integrations, this entity is the useful
+			// half rather than the decorative one: the address in the
+			// device record is inert metadata, while a sensor holding it
+			// can be read by a template or an automation that correlates
+			// this node with the device tracker for the same machine —
+			// which is now the only way that correlation happens.
+			Platform:       "sensor",
+			Name:           "MAC address",
+			UniqueID:       uid("mac_address"),
+			ValueTemplate:  optional("mac_address"),
+			EntityCategory: "diagnostic",
+			Icon:           "mdi:ethernet",
+		},
 		"last_seen": {
 			Platform:         "sensor",
 			Name:             "Last seen",

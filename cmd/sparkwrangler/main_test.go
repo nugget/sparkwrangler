@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/nugget/sparkwrangler/internal/hadiscovery"
+	"github.com/nugget/sparkwrangler/internal/host"
 	"github.com/nugget/sparkwrangler/internal/publisher"
 )
 
@@ -102,5 +107,100 @@ func TestStatusLine(t *testing.T) {
 				t.Errorf("statusLine() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestMACConnections pins the shape of the registry entry, and that an
+// unknown address claims nothing. An empty entry would not merely be
+// useless, it would assert the connection ("mac", "") and collide with
+// any other device that made the same mistake.
+func TestMACConnections(t *testing.T) {
+	t.Parallel()
+
+	if got := macConnections(""); got != nil {
+		t.Errorf("macConnections(\"\") = %v, want no connection claimed", got)
+	}
+
+	got := macConnections("aa:bb:cc:00:00:01")
+	if len(got) != 1 {
+		t.Fatalf("macConnections = %v, want exactly one entry", got)
+	}
+	if got[0][0] != "mac" {
+		t.Errorf("connection type = %q, want %q; Home Assistant matches on this literal", got[0][0], "mac")
+	}
+	if got[0][1] != "aa:bb:cc:00:00:01" {
+		t.Errorf("connection address = %q, want the probed address unaltered", got[0][1])
+	}
+}
+
+// TestDeviceConnectionsSerialiseAsCns pins the abbreviated discovery key.
+// Home Assistant reads "cns" and ignores an unrecognised key in silence,
+// so a device published with "connections" spelled out would look
+// entirely correct in the payload and record nothing.
+func TestDeviceConnectionsSerialiseAsCns(t *testing.T) {
+	t.Parallel()
+
+	raw, err := json.Marshal(hadiscovery.Device{
+		Name:        "spark-01",
+		Connections: macConnections("aa:bb:cc:00:00:01"),
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	cns, ok := decoded["cns"]
+	if !ok {
+		t.Fatalf("device published no \"cns\" key: %s", raw)
+	}
+	pairs, ok := cns.([]any)
+	if !ok || len(pairs) != 1 {
+		t.Fatalf("cns = %v, want a list of one pair", cns)
+	}
+	pair, ok := pairs[0].([]any)
+	if !ok || len(pair) != 2 || pair[0] != "mac" {
+		t.Errorf("cns[0] = %v, want [\"mac\", <address>]", pairs[0])
+	}
+
+	// A node with no address must publish no key at all rather than an
+	// empty list, which Home Assistant would treat as a device asserting
+	// it has no connections.
+	raw, err = json.Marshal(hadiscovery.Device{Name: "spark-01"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(raw, []byte(`"cns"`)) {
+		t.Errorf("device with no MAC published a connections key: %s", raw)
+	}
+}
+
+// TestExplicitInterfaceFailureStopsStartup pins that a named interface is
+// a promise rather than a preference. A typo in -net-interface used to be
+// logged and absorbed, which left the daemon running and publishing no
+// address at all — the operator's evidence that they had asked for one
+// being a single WARN line in the journal.
+//
+// The broker address is deliberately one nothing answers on: a run that
+// wrongly continues past the MAC failure fails later for a different
+// reason, and the assertion on the message tells the two apart.
+func TestExplicitInterfaceFailureStopsStartup(t *testing.T) {
+	original := host.SysClassNet
+	t.Cleanup(func() { host.SysClassNet = original })
+	host.SysClassNet = t.TempDir()
+
+	err := run([]string{
+		"-node-id", "spark-01",
+		"-net-interface", "enp9s0",
+		"-vllm-url", "",
+		"-broker", "tcp://127.0.0.1:1",
+	})
+	if err == nil {
+		t.Fatal("run succeeded with an unreadable -net-interface")
+	}
+	if !strings.Contains(err.Error(), "enp9s0") {
+		t.Errorf("error = %v, want one naming the interface the operator asked for", err)
 	}
 }
