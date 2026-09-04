@@ -91,7 +91,14 @@ func buildTLSConfig(brokerURL string, opts TLSOptions) (*tls.Config, error) {
 		// Options set against a plaintext URL are a mistake worth
 		// naming rather than ignoring: the operator believes the
 		// connection is protected and it is not.
-		if opts.CAFile != "" || opts.CertFile != "" || opts.Insecure {
+		//
+		// Compared against the zero value rather than field by field.
+		// An enumeration here was wrong within a day of being written —
+		// it listed CAFile, CertFile and Insecure, so KeyFile and
+		// ServerName were silently accepted and dropped — and it would
+		// go wrong again the next time a field is added. TLSOptions is
+		// all comparable fields, so this stays correct on its own.
+		if opts != (TLSOptions{}) {
 			return nil, fmt.Errorf("tls options set but broker url %q is not a TLS scheme; use mqtts://", brokerURL)
 		}
 		return nil, nil

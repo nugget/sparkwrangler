@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -99,12 +100,25 @@ func TestBuildTLSConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("tls options against a plaintext url are an error", func(t *testing.T) {
-		// Silently ignoring them would leave the operator believing the
-		// connection is protected when it is not.
-		_, err := buildTLSConfig("tcp://localhost:1883", TLSOptions{CAFile: caPath})
-		if err == nil {
-			t.Error("buildTLSConfig accepted TLS options on a plaintext url")
+	t.Run("any tls option against a plaintext url is an error", func(t *testing.T) {
+		// Driven by reflection over TLSOptions rather than by a list of
+		// fields, because a list is exactly what was wrong here: the
+		// guard enumerated three of the five fields, so KeyFile and
+		// ServerName were silently accepted and dropped against a
+		// plaintext URL. A field added later is covered by this without
+		// anyone remembering to extend it — and if it is not
+		// comparable, the compile-time break is the right warning.
+		typ := reflect.TypeOf(TLSOptions{})
+		for i := range typ.NumField() {
+			field := typ.Field(i)
+			t.Run(field.Name, func(t *testing.T) {
+				var opts TLSOptions
+				setNonZero(t, reflect.ValueOf(&opts).Elem().Field(i))
+
+				if _, err := buildTLSConfig("tcp://localhost:1883", opts); err == nil {
+					t.Errorf("buildTLSConfig accepted %s on a plaintext url; it would be silently ignored", field.Name)
+				}
+			})
 		}
 	})
 
@@ -167,6 +181,22 @@ func TestBuildTLSConfig(t *testing.T) {
 			t.Error("InsecureSkipVerify not set")
 		}
 	})
+}
+
+// setNonZero puts a distinguishable non-zero value into a field, so the
+// plaintext guard is tested against every member of TLSOptions without
+// naming them.
+func setNonZero(t *testing.T, field reflect.Value) {
+	t.Helper()
+
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString("set")
+	case reflect.Bool:
+		field.SetBool(true)
+	default:
+		t.Fatalf("TLSOptions gained a %s field; teach setNonZero how to fill it", field.Kind())
+	}
 }
 
 // writeTestCA generates a throwaway self-signed CA, so the parsing path
