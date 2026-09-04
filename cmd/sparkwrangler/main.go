@@ -39,29 +39,43 @@ func run(args []string) error {
 	}
 	log := newLogger(cfg.LogLevel)
 
-	// Probed once, before the device record is built: the connection has
-	// to be in the retained discovery message, which is published from
-	// the broker's connect callback inside NewMQTT below. A MAC found
-	// later would never reach Home Assistant on this run.
+	// Probed once, before the device record is built: the address has to
+	// be in the retained discovery message, which is published from the
+	// broker's connect callback inside NewMQTT below. A MAC found later
+	// would never reach Home Assistant on this run.
 	mac, err := host.PrimaryMAC(cfg.NetInterface)
 	if err != nil {
-		log.Warn("could not read the ethernet MAC", "interface", cfg.NetInterface, "error", err)
+		// An interface named explicitly is a promise the operator made,
+		// and a typo in it must not be absorbed. Automatic probing
+		// degrades instead: a host with no ethernet port is a state to
+		// publish nothing for, not a reason to refuse to report the GPU
+		// telemetry that is the point of the daemon.
+		if cfg.NetInterface != "" {
+			return err
+		}
+		log.Warn("could not read the ethernet MAC", "error", err)
 	}
 	if mac == "" {
-		log.Debug("no ethernet MAC to publish; the device will not link to others for this machine")
+		log.Debug("no ethernet MAC to publish")
 	}
 
 	publisher.Device = hadiscovery.Device{
 		Name: firstNonEmpty(cfg.NodeName, cfg.NodeID),
-		// The connection, not the sensor, is what makes Home Assistant
-		// treat this device and whatever its DHCP or router integration
-		// knows as one machine. Omitted entirely when unknown, because a
-		// wrong address links this node's sensors onto somebody else's
-		// device page.
-		Connections:  macConnections(mac),
-		Manufacturer: "NVIDIA",
-		Model:        cfg.DeviceModel,
-		SWVersion:    hadiscovery.Version,
+		// Records the node's hardware address in the device registry,
+		// which is the field that carries one. It does not merge this
+		// device with another integration's — see the Connections
+		// documentation for what changed in Home Assistant 2026.8.
+		// Omitted entirely when unknown rather than claimed empty.
+		Connections: macConnections(mac),
+		// The only field left that puts this device beside the other
+		// records for the same machine, now that the registry no longer
+		// folds them together. Honoured when Home Assistant first
+		// creates the device; a device an operator has since moved stays
+		// where they put it.
+		SuggestedArea: cfg.Area,
+		Manufacturer:  "NVIDIA",
+		Model:         cfg.DeviceModel,
+		SWVersion:     hadiscovery.Version,
 		// Deliberately not cfg.VLLMURL: that is loopback on every normal
 		// deployment, and Home Assistant renders it as a link, which
 		// would send whoever clicks it to their own machine.

@@ -137,16 +137,34 @@ pulled a 60 GB model reads calmer here than its resident-set accounting
 would suggest. That is the intended reading. The question is how close
 the next allocation is to failing, not where the bytes went.
 
-**The MAC address** is published so Home Assistant can recognise this
-node as a machine it already knows. The entity is the visible half; the
-working half is the `connections` entry in the device record, which is
-what the device registry matches on to fold this device together with
-whatever a DHCP, router or ping integration has for the same host. The
-address is read from `/sys/class/net`, and the interface chosen is the
-one carrying the default route — a Spark has two QSFP fabric ports whose
-kernel names sort ahead of the RJ45 the house network sees, so "the
-first one" would publish an address nothing else has ever heard of.
-`-net-interface` overrides the choice.
+**The MAC address** identifies this node as a machine Home Assistant may
+know by other means. It is published twice: as a `connections` entry in
+the device record, which is the registry's field for a hardware address,
+and as a diagnostic sensor.
+
+Be clear about what that does and does not buy, because it changed
+recently. Until Home Assistant 2026.8 a connection shared with another
+integration merged both records into one device. 2026.8 scoped
+identifiers and connections to a single config entry and split the prior
+composite devices, so **an MQTT device no longer merges with the one a
+DHCP or router integration has for the same host, and nothing in a
+discovery payload can make it.** Home Assistant offers no replacement —
+`via_device` is deprecated and child devices are unimplemented future
+work. The connection entry stays because it is still the correct field
+for the address and still what any future correlation would need; the
+sensor is the half that is useful today, since a template or automation
+can read it and correlate the two itself. `-area` suggests where the
+device lands, which is what actually puts it beside the other records
+for the same machine.
+
+The address is read from `/sys/class/net`, and the interface chosen is
+the one carrying the default route — a Spark has two QSFP fabric ports
+whose kernel names sort ahead of the RJ45 the house network sees, so
+"the first one" would publish an address nothing else has ever heard of.
+The route is followed even when it leaves over a bridge, bond or VLAN,
+which is filed as a virtual device and is nonetheless exactly the
+address the router sees. `-net-interface` overrides the choice, and a
+name that cannot be read stops startup rather than being absorbed.
 
 ## Design notes
 

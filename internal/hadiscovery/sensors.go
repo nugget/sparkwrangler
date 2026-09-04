@@ -282,13 +282,13 @@ func hostSensors(uid func(string) string) map[string]Component {
 			Icon:              "mdi:memory",
 		},
 		"mac_address": {
-			// Diagnostic, and the entity is the lesser half of what this
-			// reading is for: the address also goes into the device's
-			// connections, which is the field Home Assistant actually
-			// matches on to fold this device together with the one its
-			// DHCP or router integration already knows. The entity makes
-			// that visible to an operator asking why the link did or did
-			// not form.
+			// Diagnostic. Since Home Assistant 2026.8 stopped merging
+			// devices across integrations, this entity is the useful
+			// half rather than the decorative one: the address in the
+			// device record is inert metadata, while a sensor holding it
+			// can be read by a template or an automation that correlates
+			// this node with the device tracker for the same machine —
+			// which is now the only way that correlation happens.
 			Platform:       "sensor",
 			Name:           "MAC address",
 			UniqueID:       uid("mac_address"),

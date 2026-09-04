@@ -131,6 +131,55 @@ func TestPrimaryMACSelection(t *testing.T) {
 			want:  "aa:bb:cc:00:00:01",
 		},
 		{
+			name: "a default route over a bridge is the address the router sees",
+			// The case this got wrong until review. br0 is filed under
+			// devices/virtual, so filtering before consulting the route
+			// dropped it and fell back to the QSFP port — the exact
+			// address the default-route preference exists to avoid.
+			ifaces: []fakeIface{
+				{name: "br0", mac: "aa:bb:cc:00:00:09", virtual: true},
+				{name: "enp1s0f0np0", mac: "aa:bb:cc:00:00:01"},
+				{name: "enp2s0", mac: "aa:bb:cc:00:00:03"},
+			},
+			route: routeHeader +
+				"br0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n",
+			want: "aa:bb:cc:00:00:09",
+		},
+		{
+			name: "a default route over a VLAN interface is honoured too",
+			ifaces: []fakeIface{
+				{name: "enp2s0", mac: "aa:bb:cc:00:00:03"},
+				{name: "enp2s0.100", mac: "aa:bb:cc:00:00:0a", virtual: true},
+				{name: "enp1s0f0np0", mac: "aa:bb:cc:00:00:01"},
+			},
+			route: routeHeader +
+				"enp2s0.100\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n",
+			want: "aa:bb:cc:00:00:0a",
+		},
+		{
+			name: "a default route over a bond is honoured too",
+			ifaces: []fakeIface{
+				{name: "bond0", mac: "aa:bb:cc:00:00:0b", virtual: true},
+				{name: "enp1s0f0np0", mac: "aa:bb:cc:00:00:01"},
+			},
+			route: routeHeader +
+				"bond0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n",
+			want: "aa:bb:cc:00:00:0b",
+		},
+		{
+			name: "a default route over a wireguard device has no address to take",
+			// wg0 and tun devices carry no hardware address at all, so
+			// the route names an interface that cannot answer and the
+			// fallback has to take over rather than publishing nothing.
+			ifaces: []fakeIface{
+				{name: "enp1s0", mac: "aa:bb:cc:00:00:01"},
+				{name: "wg0", mac: "00:00:00:00:00:00", virtual: true},
+			},
+			route: routeHeader +
+				"wg0\t00000000\t00000000\t0001\t0\t0\t0\t00000000\t0\t0\t0\n",
+			want: "aa:bb:cc:00:00:01",
+		},
+		{
 			name: "a default route over an interface with no address is ignored",
 			ifaces: []fakeIface{
 				{name: "enp1s0", mac: "aa:bb:cc:00:00:01"},
@@ -205,6 +254,20 @@ func TestPrimaryMACSelection(t *testing.T) {
 			},
 			route:     routeHeader,
 			preferred: "enp9s0",
+			wantErr:   true,
+		},
+		{
+			name: "a named interface with no address is an error, not silence",
+			// Naming an interface that exists and has nothing to say is
+			// the same broken promise as naming one that is absent, and
+			// returning "" here would have startup continue as though
+			// nobody had asked.
+			ifaces: []fakeIface{
+				{name: "enp1s0", mac: "aa:bb:cc:00:00:01"},
+				{name: "dummy0", mac: "00:00:00:00:00:00", virtual: true},
+			},
+			route:     routeHeader,
+			preferred: "dummy0",
 			wantErr:   true,
 		},
 		{

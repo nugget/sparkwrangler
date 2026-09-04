@@ -14,16 +14,25 @@ import "fmt"
 // Device is the physical node, as Home Assistant will file it.
 type Device struct {
 	Identifiers []string `json:"ids"`
-	// Connections is how Home Assistant folds this device together with
-	// the one another integration already has for the same machine. Each
-	// entry is a [type, identifier] pair; the type that matters here is
-	// "mac", which the DHCP, router and device-tracker integrations all
-	// register their devices under.
+	// Connections records the node's hardware addresses in the device
+	// registry. Each entry is a [type, identifier] pair; the type used
+	// here is "mac", which is what the DHCP, router and device-tracker
+	// integrations register their own devices under.
 	//
-	// This, not the MAC sensor, is the mechanism. An entity holding the
-	// address is something an operator can read; a matching connection
-	// is what makes the two device records one, so the vLLM sensors and
-	// whatever else knows this machine end up on a single page.
+	// It no longer merges those devices with this one, and the comment
+	// that said it did was wrong. Until Home Assistant 2026.8 a
+	// connection shared with another integration folded both records
+	// into one shared device; 2026.8 scoped identifiers and connections
+	// to a single config entry, and the registry now splits prior
+	// composite devices into one device per entry. Nothing an MQTT
+	// discovery payload can say will merge them, and Home Assistant
+	// offers no replacement — via_device is deprecated and child devices
+	// are unimplemented future work.
+	//
+	// It is still the correct field for the address, still shown on the
+	// device page, and still the data any future correlation would need,
+	// so it stays. SuggestedArea is what actually puts the two records
+	// side by side today.
 	Connections  [][2]string `json:"cns,omitempty"`
 	Name         string      `json:"name"`
 	Manufacturer string      `json:"mf,omitempty"`
@@ -32,7 +41,12 @@ type Device struct {
 	SWVersion    string      `json:"sw,omitempty"`
 	HWVersion    string      `json:"hw,omitempty"`
 	SerialNumber string      `json:"sn,omitempty"`
-	ConfigURL    string      `json:"cu,omitempty"`
+	// SuggestedArea places the device on creation only. Home Assistant
+	// does not move a device an operator has already filed somewhere,
+	// which is the right behaviour and means this cannot be used to
+	// correct a placement after the fact.
+	SuggestedArea string `json:"sa,omitempty"`
+	ConfigURL     string `json:"cu,omitempty"`
 }
 
 // Origin names the software that published the discovery, which is what

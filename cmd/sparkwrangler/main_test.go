@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/nugget/sparkwrangler/internal/hadiscovery"
+	"github.com/nugget/sparkwrangler/internal/host"
 	"github.com/nugget/sparkwrangler/internal/publisher"
 )
 
@@ -108,15 +110,10 @@ func TestStatusLine(t *testing.T) {
 	}
 }
 
-// TestMACConnections pins the shape Home Assistant matches on, and that
-// an unknown address claims nothing.
-//
-// This is the half of the MAC feature that does the work. The sensor is
-// visible and inert; the connection is invisible and is what folds this
-// device together with whatever else Home Assistant already knows about
-// the machine. An empty entry here would not merely fail to link, it
-// would claim the connection ("mac", "") and could collide with any
-// other device that made the same mistake.
+// TestMACConnections pins the shape of the registry entry, and that an
+// unknown address claims nothing. An empty entry would not merely be
+// useless, it would assert the connection ("mac", "") and collide with
+// any other device that made the same mistake.
 func TestMACConnections(t *testing.T) {
 	t.Parallel()
 
@@ -139,7 +136,7 @@ func TestMACConnections(t *testing.T) {
 // TestDeviceConnectionsSerialiseAsCns pins the abbreviated discovery key.
 // Home Assistant reads "cns" and ignores an unrecognised key in silence,
 // so a device published with "connections" spelled out would look
-// entirely correct in the payload and link to nothing.
+// entirely correct in the payload and record nothing.
 func TestDeviceConnectionsSerialiseAsCns(t *testing.T) {
 	t.Parallel()
 
@@ -177,5 +174,33 @@ func TestDeviceConnectionsSerialiseAsCns(t *testing.T) {
 	}
 	if bytes.Contains(raw, []byte(`"cns"`)) {
 		t.Errorf("device with no MAC published a connections key: %s", raw)
+	}
+}
+
+// TestExplicitInterfaceFailureStopsStartup pins that a named interface is
+// a promise rather than a preference. A typo in -net-interface used to be
+// logged and absorbed, which left the daemon running and publishing no
+// address at all — the operator's evidence that they had asked for one
+// being a single WARN line in the journal.
+//
+// The broker address is deliberately one nothing answers on: a run that
+// wrongly continues past the MAC failure fails later for a different
+// reason, and the assertion on the message tells the two apart.
+func TestExplicitInterfaceFailureStopsStartup(t *testing.T) {
+	original := host.SysClassNet
+	t.Cleanup(func() { host.SysClassNet = original })
+	host.SysClassNet = t.TempDir()
+
+	err := run([]string{
+		"-node-id", "spark-01",
+		"-net-interface", "enp9s0",
+		"-vllm-url", "",
+		"-broker", "tcp://127.0.0.1:1",
+	})
+	if err == nil {
+		t.Fatal("run succeeded with an unreadable -net-interface")
+	}
+	if !strings.Contains(err.Error(), "enp9s0") {
+		t.Errorf("error = %v, want one naming the interface the operator asked for", err)
 	}
 }

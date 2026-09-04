@@ -42,28 +42,38 @@ func PrimaryMAC(preferred string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("interface %q: %w", preferred, err)
 		}
+		if mac == "" {
+			return "", fmt.Errorf("interface %q has no hardware address", preferred)
+		}
 		return mac, nil
 	}
 
+	// The interface carrying the default route wins, and it is read
+	// directly rather than looked up among the filtered candidates
+	// below. That distinction is the whole correctness of this function:
+	// a node whose default route leaves over a bridge, a bond or a VLAN
+	// has precisely the address the router sees on that interface, and
+	// every one of those is filed under devices/virtual. Filtering first
+	// — which this did until a reviewer pointed it out — sent exactly
+	// the containerised host this is aimed at back to the fallback,
+	// where it published a QSFP fabric address instead. That is the
+	// failure the default-route preference exists to prevent, so the
+	// filter must not run ahead of it.
+	//
+	// A default route over an interface with no hardware address at all
+	// is common and harmless: wireguard and tun devices have none,
+	// readMAC declines them, and the fallback takes over.
+	if def := defaultRouteInterface(); def != "" {
+		if mac, err := readMAC(def); err == nil && mac != "" {
+			return mac, nil
+		}
+	}
+
+	// No default route to follow, so guess: the lowest-named port that
+	// looks like something a cable goes into.
 	candidates, err := ethernetInterfaces()
 	if err != nil || len(candidates) == 0 {
 		return "", err
-	}
-
-	// The interface carrying the default route wins. The whole purpose
-	// of publishing this address is that Home Assistant already knows it
-	// from somewhere else — its DHCP, router or ping integration — and
-	// those see a node on the network it routes to. A Spark has two QSFP
-	// ports for the cluster fabric whose kernel names sort ahead of the
-	// RJ45 management port, so "the first one" would confidently publish
-	// an address nothing else on the network has ever seen, and the
-	// device link would simply never form.
-	if def := defaultRouteInterface(); def != "" {
-		for _, c := range candidates {
-			if c.name == def {
-				return c.mac, nil
-			}
-		}
 	}
 	return candidates[0].mac, nil
 }
@@ -77,6 +87,9 @@ type netInterface struct {
 // address, sorted by name so the fallback choice is stable across
 // restarts. An identity that changed from one boot to the next would
 // move this node's Home Assistant device record with it.
+//
+// This is only ever the fallback. When a default route exists it names
+// the right interface outright, and the guesswork here is not consulted.
 func ethernetInterfaces() ([]netInterface, error) {
 	entries, err := os.ReadDir(SysClassNet)
 	if err != nil {
@@ -105,14 +118,20 @@ func ethernetInterfaces() ([]netInterface, error) {
 // isPhysicalEthernet excludes everything that has a hardware address
 // without being a port somebody could plug a cable into.
 //
+// This narrows the guess made when there is no default route to follow,
+// and it is deliberately not applied to an interface the routing table
+// named. A bridge is excluded here and is still the correct answer when
+// it carries the default route, because the address the router sees is
+// a question about routing, not about how the kernel files the device.
+//
 // Four exclusions, because each catches a different thing that would
-// otherwise be published as this node's identity. Loopback is nobody's
-// address. Anything under devices/virtual — docker0, veth pairs,
-// bridges, tun, bond members — has an address no router has ever seen,
-// and on a node running containerised inference there are usually more
-// of those than real ports. A type other than ARPHRD_ETHER is not an
-// ethernet address to begin with. And a wireless interface is
-// ethernet-shaped but is not the port the operator meant.
+// otherwise be guessed at as this node's identity. Loopback is nobody's
+// address. Anything under devices/virtual — docker0, veth pairs, unused
+// bridges — is an address no router has seen, and on a node running
+// containerised inference there are usually more of those than real
+// ports. A type other than ARPHRD_ETHER is not an ethernet address to
+// begin with. And a wireless interface is ethernet-shaped but is not
+// the port an operator naming "the ethernet MAC" meant.
 func isPhysicalEthernet(name string) bool {
 	if name == "lo" {
 		return false
