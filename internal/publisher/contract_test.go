@@ -324,3 +324,69 @@ func TestBinarySensorsDistinguishMissingFromFalse(t *testing.T) {
 		})
 	}
 }
+
+// TestUniqueIDsAreStable pins every entity's unique id against a golden
+// list, and it exists because of how cheap the mistake is to make.
+//
+// A unique id is the only thing tying an entity to its recorded history.
+// Change one and Home Assistant does not report an error: it orphans the
+// old entity, keeps its statistics under a name nothing writes to any
+// more, and creates a fresh entity beside it that starts from nothing.
+// Every graph, automation and dashboard card referencing the old id goes
+// quiet, and the node looks healthy throughout.
+//
+// The reason it is easy is that a component's display Name and its
+// UniqueID sit one line apart in the catalog. Renaming the former is
+// routine and safe — "GPU power" became "GPU rail power" without
+// touching a single stored reading. Renaming the latter looks like the
+// same edit and is not. This test lets the first happen freely and
+// makes the second impossible to do by accident.
+//
+// Adding an entity means adding a line here. Changing one means somebody
+// has decided to discard that entity's history on purpose, and should
+// have to say so in a diff a reviewer will notice.
+func TestUniqueIDsAreStable(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]string{
+		"generation_rate":       "spark-01_generation_rate",
+		"gpu_clock":             "spark-01_gpu_clock",
+		"gpu_power":             "spark-01_gpu_power",
+		"gpu_temperature":       "spark-01_gpu_temperature",
+		"gpu_utilization":       "spark-01_gpu_utilization",
+		"kv_cache_tokens":       "spark-01_kv_cache_tokens",
+		"kv_cache_usage":        "spark-01_kv_cache_usage",
+		"last_seen":             "spark-01_last_seen",
+		"mac_address":           "spark-01_mac_address",
+		"max_concurrency":       "spark-01_max_concurrency",
+		"max_model_len":         "spark-01_max_model_len",
+		"memory_available":      "spark-01_memory_available",
+		"memory_used":           "spark-01_memory_used",
+		"preemptions":           "spark-01_preemptions",
+		"prefix_cache_hit_rate": "spark-01_prefix_cache_hit_rate",
+		"prefix_caching":        "spark-01_prefix_caching",
+		"requests_running":      "spark-01_requests_running",
+		"requests_waiting":      "spark-01_requests_waiting",
+		"served_model":          "spark-01_served_model",
+		"vllm_running":          "spark-01_vllm_running",
+		"waiting_for_capacity":  "spark-01_waiting_for_capacity",
+	}
+
+	got := hadiscovery.Sensors("spark-01", true)
+	for id, c := range got {
+		expected, known := want[id]
+		if !known {
+			t.Errorf("component %q is new; add it to the golden list", id)
+			continue
+		}
+		if c.UniqueID != expected {
+			t.Errorf("component %q unique id changed from %q to %q, which orphans its history in Home Assistant",
+				id, expected, c.UniqueID)
+		}
+	}
+	for id := range want {
+		if _, ok := got[id]; !ok {
+			t.Errorf("component %q was removed; its entity and history are abandoned in Home Assistant", id)
+		}
+	}
+}

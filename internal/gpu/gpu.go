@@ -12,7 +12,10 @@ type Reading struct {
 	UtilizationPct *float64
 	ClockMHz       *float64
 	TemperatureC   *float64
-	PowerW         *float64
+	// PowerW is the accelerator's own power rail, which is not the
+	// module's and not the node's. See [NvidiaSMI] for what that
+	// excludes on the hardware this targets.
+	PowerW *float64
 }
 
 // Reader observes an accelerator.

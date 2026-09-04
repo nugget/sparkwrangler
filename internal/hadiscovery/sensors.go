@@ -242,8 +242,27 @@ func hostSensors(uid func(string) string) map[string]Component {
 			StateClass:        "measurement",
 		},
 		"gpu_power": {
+			// "GPU rail", not "GPU", and the distinction is measured
+			// rather than pedantic. On GB10 (driver 580.173.02)
+			// `nvidia-smi -q -d POWER` populates GPU Power Readings and
+			// nothing else: Module Power Readings and GPU Memory Power
+			// Readings are both N/A, as is every power limit. So this
+			// figure excludes the Grace cores and the LPDDR5X subsystem,
+			// which on unified memory is a large share of what the
+			// machine actually draws — it reads ~9 W idle and ~21 W at
+			// 95% utilisation on a node with a 240 W supply.
+			//
+			// The name matters because a smart plug measuring the same
+			// machine sits beside this in Home Assistant reading several
+			// times higher, and two disagreeing power sensors invite
+			// somebody to conclude one is broken. Both are right; they
+			// measure different things, and only the name says so.
+			//
+			// The unique id deliberately stays gpu_power. It is what
+			// ties the entity to its history, and renaming it here would
+			// orphan every graph while looking like a tidy-up.
 			Platform:          "sensor",
-			Name:              "GPU power",
+			Name:              "GPU rail power",
 			UniqueID:          uid("gpu_power"),
 			ValueTemplate:     optional("gpu_power_w"),
 			DeviceClass:       "power",

@@ -122,6 +122,17 @@ accounts for. On a conversational workload it is most of the reason
 repeat turns are cheap, and a collapse in it is invisible everywhere
 else.
 
+**GPU rail power** is named for what it measures, which is narrower than
+"the machine". On GB10 the driver populates GPU Power Readings and marks
+Module Power Readings, GPU Memory Power Readings and every power limit
+`N/A`, so the figure excludes the Grace cores and the LPDDR5X subsystem
+— a large share of draw on unified memory. It reads roughly 9 W idle and
+21 W at 95% utilisation on a node with a 240 W supply. There is no
+broader number to publish: the host exposes no `hwmon` power rails and
+no `tegrastats`, so a wall meter is the only route to true system draw.
+If you have one, its reading and this one will differ by a lot, and both
+are correct.
+
 **Available host memory** is the leading indicator of a wedge. On
 unified-memory hardware the accelerator and the page cache draw on one
 pool, so a large download competes with a resident model, and the
