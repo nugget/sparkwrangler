@@ -26,7 +26,9 @@ type MQTT struct {
 	client mqtt.Client
 	log    *slog.Logger
 
-	nodeID     string
+	nodeID string
+	// withVLLM records whether this node declares the serving entities.
+	withVLLM   bool
 	stateTopic string
 	availTopic string
 	discoTopic string
@@ -46,6 +48,11 @@ type MQTTOptions struct {
 	// state and availability.
 	DiscoveryPrefix string
 	TopicPrefix     string
+
+	// WithVLLM declares the serving entities on this node. False for a
+	// tensor-parallel worker, which has an accelerator worth watching
+	// and no engine to ask.
+	WithVLLM bool
 
 	// TLS configures transport security. It applies only when BrokerURL
 	// names a TLS scheme, and setting it against a plaintext URL is an
@@ -92,6 +99,7 @@ func NewMQTT(opts MQTTOptions) (*MQTT, error) {
 	p := &MQTT{
 		log:        opts.Logger.With("node", opts.NodeID),
 		nodeID:     opts.NodeID,
+		withVLLM:   opts.WithVLLM,
 		stateTopic: hadiscovery.StateTopic(opts.TopicPrefix, opts.NodeID),
 		availTopic: hadiscovery.AvailabilityTopic(opts.TopicPrefix, opts.NodeID),
 		discoTopic: hadiscovery.DiscoveryTopic(opts.DiscoveryPrefix, opts.NodeID),
@@ -165,7 +173,7 @@ func (p *MQTT) Announce() error {
 	cfg := hadiscovery.Config{
 		Device:            p.device(),
 		Origin:            hadiscovery.Origin{Name: "sparkwrangler", SWVersion: hadiscovery.Version, SupportURL: "https://github.com/nugget/sparkwrangler"},
-		Components:        hadiscovery.Sensors(p.nodeID),
+		Components:        hadiscovery.Sensors(p.nodeID, p.withVLLM),
 		StateTopic:        p.stateTopic,
 		AvailabilityTopic: p.availTopic,
 		PayloadAvailable:  PayloadOnline,

@@ -78,7 +78,12 @@ type Reading struct {
 	// cheap, and a collapse in it explains a latency complaint that
 	// nothing else accounts for.
 	PrefixCacheHitRate *float64
-	PrefixCachingOn    bool
+	// PrefixCachingOn is absent when the engine did not report it —
+	// /metrics unreachable, or the cache_config_info label missing. A
+	// plain bool would publish a fabricated false, and false here means
+	// "prefix caching is off", which is a materially different claim
+	// from "nobody said".
+	PrefixCachingOn *bool
 
 	// GenerationTokens is a monotonic counter; the publisher derives a
 	// rate from successive readings rather than reporting the total.
@@ -143,8 +148,8 @@ func (r *Reading) applyMetrics(m Metrics) {
 		r.PrefixCacheHitRate = ptr(hits / queries)
 	}
 
-	if v, ok := m.Label("vllm:cache_config_info", "enable_prefix_caching"); ok {
-		r.PrefixCachingOn = v == "True" || v == "true"
+	if v, ok := m.Label(MetricCacheConfig, "enable_prefix_caching"); ok {
+		r.PrefixCachingOn = ptr(v == "True" || v == "true")
 	}
 	if v, ok := m.Label("vllm:cache_config_info", "kv_cache_size_tokens"); ok {
 		if n, err := strconv.Atoi(v); err == nil {

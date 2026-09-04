@@ -44,7 +44,10 @@ func run(args []string) error {
 		Manufacturer: "NVIDIA",
 		Model:        cfg.DeviceModel,
 		SWVersion:    hadiscovery.Version,
-		ConfigURL:    cfg.VLLMURL,
+		// Deliberately not cfg.VLLMURL: that is loopback on every normal
+		// deployment, and Home Assistant renders it as a link, which
+		// would send whoever clicks it to their own machine.
+		ConfigURL: cfg.ConfigURL,
 	}
 
 	mq, err := publisher.NewMQTT(publisher.MQTTOptions{
@@ -56,6 +59,7 @@ func run(args []string) error {
 		DiscoveryPrefix: cfg.DiscoveryPrefix,
 		TopicPrefix:     cfg.TopicPrefix,
 		QoS:             byte(cfg.QoS),
+		WithVLLM:        !cfg.WorkerMode(),
 		TLS: publisher.TLSOptions{
 			CAFile:     cfg.CAFile,
 			CertFile:   cfg.CertFile,
@@ -87,7 +91,7 @@ func run(args []string) error {
 
 	log.Info("publishing",
 		"node", cfg.NodeID,
-		"vllm", cfg.VLLMURL,
+		"vllm", firstNonEmpty(cfg.VLLMURL, "none (worker mode)"),
 		"broker", cfg.BrokerURL,
 		"interval", cfg.Interval,
 		"watchdog", sdnotify.WatchdogInterval(),
@@ -115,7 +119,15 @@ func watchdogTick(interval, watchdog time.Duration) time.Duration {
 // operator opening it actually has, which is never "is the process
 // running" — systemd already said that — but "is it getting anywhere".
 func statusLine(s publisher.State) string {
-	if !s.VLLMUp {
+	if s.VLLMUp == nil {
+		// A worker has nothing to say about serving, so it reports the
+		// thing it does know rather than a blank or a false alarm.
+		if s.GPUUtilizationPct != nil {
+			return fmt.Sprintf("worker node, GPU %.0f%%", *s.GPUUtilizationPct)
+		}
+		return "worker node"
+	}
+	if !*s.VLLMUp {
 		return "vLLM unreachable"
 	}
 	line := "serving " + s.Model
@@ -132,7 +144,10 @@ func statusLine(s publisher.State) string {
 }
 
 func poll(ctx context.Context, cfg config.Config, mq *publisher.MQTT, sd *sdnotify.Notifier, log *slog.Logger) error {
-	vc := vllm.NewClient(cfg.VLLMURL, cfg.VLLMTimeout)
+	var vc *vllm.Client
+	if !cfg.WorkerMode() {
+		vc = vllm.NewClient(cfg.VLLMURL, cfg.VLLMTimeout)
+	}
 	var accel gpu.Reader = gpu.NvidiaSMI{Path: cfg.NvidiaSMIPath}
 
 	tick := watchdogTick(cfg.Interval, sdnotify.WatchdogInterval())
@@ -193,11 +208,15 @@ func observe(
 	elapsed time.Duration,
 	log *slog.Logger,
 ) (publisher.State, vllm.Reading) {
-	reading, err := vc.Read(ctx)
-	if err != nil {
-		log.Warn("vllm read failed", "error", err)
+	var reading vllm.Reading
+	state := publisher.WorkerState()
+	if vc != nil {
+		var err error
+		if reading, err = vc.Read(ctx); err != nil {
+			log.Warn("vllm read failed", "error", err)
+		}
+		state = publisher.FromVLLM(reading, prev, elapsed)
 	}
-	state := publisher.FromVLLM(reading, prev, elapsed)
 
 	if g, err := accel.Read(ctx); err != nil {
 		log.Warn("accelerator read failed", "adapter", accel.Name(), "error", err)

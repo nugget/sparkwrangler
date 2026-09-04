@@ -18,7 +18,11 @@ import (
 // Optional fields are pointers and are omitted when absent, which the
 // templates render as unavailable rather than as a fabricated zero.
 type State struct {
-	VLLMUp bool   `json:"vllm_up"`
+	// VLLMUp is absent on a node that serves no engine, rather than
+	// false. False means "the engine should be here and is not"; a
+	// tensor-parallel worker has no engine to be missing, and publishing
+	// false there would report a fault that does not exist.
+	VLLMUp *bool  `json:"vllm_up,omitempty"`
 	Model  string `json:"model,omitempty"`
 
 	KVCacheUsagePct           *float64 `json:"kv_cache_usage_pct,omitempty"`
@@ -29,10 +33,12 @@ type State struct {
 	PrefixCacheHitRatePct     *float64 `json:"prefix_cache_hit_rate_pct,omitempty"`
 	GenerationTokensPerSecond *float64 `json:"generation_tokens_per_second,omitempty"`
 
-	MaxModelLen          *int     `json:"max_model_len,omitempty"`
-	KVCacheTokens        *int     `json:"kv_cache_tokens,omitempty"`
-	MaxConcurrency       *float64 `json:"max_concurrency,omitempty"`
-	PrefixCachingEnabled bool     `json:"prefix_caching_enabled"`
+	MaxModelLen    *int     `json:"max_model_len,omitempty"`
+	KVCacheTokens  *int     `json:"kv_cache_tokens,omitempty"`
+	MaxConcurrency *float64 `json:"max_concurrency,omitempty"`
+	// Absent on a worker for the same reason as VLLMUp: it is a property
+	// of an engine, and there is no engine here to have it.
+	PrefixCachingEnabled *bool `json:"prefix_caching_enabled,omitempty"`
 
 	GPUUtilizationPct    *float64 `json:"gpu_utilization_pct,omitempty"`
 	GPUClockMHz          *float64 `json:"gpu_clock_mhz,omitempty"`
@@ -43,6 +49,14 @@ type State struct {
 	LastSeen string `json:"last_seen"`
 }
 
+// WorkerState is the starting state for a node that runs no engine. The
+// caller fills the accelerator and host readings onto it exactly as it
+// would for a serving node; the difference is only that nothing claims
+// anything about an engine.
+func WorkerState() State {
+	return State{LastSeen: time.Now().UTC().Format(time.RFC3339)}
+}
+
 // FromVLLM fills the serving half of the state from one reading. The
 // host and accelerator half is filled by the platform adapter.
 //
@@ -51,8 +65,11 @@ type State struct {
 // total since the engine started is not that.
 func FromVLLM(r vllm.Reading, prev *vllm.Reading, elapsed time.Duration) State {
 	s := State{
-		VLLMUp:               r.Up,
-		Model:                r.Model,
+		VLLMUp: &r.Up,
+		Model:  r.Model,
+		// Carried only when the engine reported it. Assigning
+		// unconditionally would republish the zero value as though it
+		// were an observation.
 		PrefixCachingEnabled: r.PrefixCachingOn,
 		LastSeen:             time.Now().UTC().Format(time.RFC3339),
 	}

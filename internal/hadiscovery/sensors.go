@@ -9,6 +9,18 @@ const Version = "0.1.0"
 func intPtr(v int) *int    { return &v }
 func boolPtr(v bool) *bool { return &v }
 
+// optionalBinary renders a boolean that may be absent from the state
+// payload.
+//
+// The obvious template — {{ 'ON' if value_json.x else 'OFF' }} — is
+// wrong for exactly the case this exists to handle: an undefined key is
+// falsey in Jinja, so a reading nobody took renders as OFF and the
+// sensor confidently reports the opposite of unknown. The definedness
+// check has to come first.
+func optionalBinary(key string) string {
+	return fmt.Sprintf("{{ None if value_json.%s is not defined else ('ON' if value_json.%s else 'OFF') }}", key, key)
+}
+
 // optional renders a value that may be absent from the state payload.
 // A missing key would otherwise render as an empty string, which Home
 // Assistant stores as a state of "" rather than as unknown; default(None)
@@ -19,6 +31,13 @@ func optional(key string) string {
 
 // Sensors returns the component set for one node, keyed by the object id
 // Home Assistant will use.
+//
+// withVLLM is false for a node that serves no API of its own. On a
+// tensor-parallel cluster only the head node does: the others hold half
+// the weights and do real work, but have no engine to ask. Declaring the
+// serving entities there would leave a dozen permanently-unknown sensors
+// and a vLLM indicator stuck off, which reads as a broken node rather
+// than a correctly-configured worker.
 //
 // Every slot the schema offers is filled deliberately. Device classes
 // decide unit conversion and long-term statistics; state classes decide
@@ -32,9 +51,28 @@ func optional(key string) string {
 // "oversubscribed"; the prefix cache hit rate is here because it explains
 // a latency change nothing else accounts for; available host memory is
 // here because on unified memory it is the leading indicator of a wedge.
-func Sensors(nodeID string) map[string]Component {
+func Sensors(nodeID string, withVLLM bool) map[string]Component {
 	uid := func(suffix string) string { return nodeID + "_" + suffix }
 
+	components := hostSensors(uid)
+	if withVLLM {
+		for id, component := range vllmSensors(uid) {
+			components[id] = component
+		}
+	}
+	// Applied here rather than repeated on every literal, so a component
+	// added later cannot forget it and end up named inconsistently with
+	// its neighbours.
+	for id, component := range components {
+		component.HasEntityName = boolPtr(true)
+		components[id] = component
+	}
+	return components
+}
+
+// vllmSensors are the components that mean something only on a node
+// running the engine.
+func vllmSensors(uid func(string) string) map[string]Component {
 	return map[string]Component{
 		// --- serving state -------------------------------------------------
 		"vllm_running": {
@@ -42,7 +80,7 @@ func Sensors(nodeID string) map[string]Component {
 			Name:          "vLLM",
 			UniqueID:      uid("vllm_running"),
 			DeviceClass:   "running",
-			ValueTemplate: "{{ 'ON' if value_json.vllm_up else 'OFF' }}",
+			ValueTemplate: optionalBinary("vllm_up"),
 			PayloadOn:     "ON",
 			PayloadOff:    "OFF",
 			Icon:          "mdi:server",
@@ -161,13 +199,20 @@ func Sensors(nodeID string) map[string]Component {
 			Platform:       "binary_sensor",
 			Name:           "Prefix caching",
 			UniqueID:       uid("prefix_caching"),
-			ValueTemplate:  "{{ 'ON' if value_json.prefix_caching_enabled else 'OFF' }}",
+			ValueTemplate:  optionalBinary("prefix_caching_enabled"),
 			PayloadOn:      "ON",
 			PayloadOff:     "OFF",
 			EntityCategory: "diagnostic",
 			Icon:           "mdi:cached",
 		},
+	}
+}
 
+// hostSensors are the components every node publishes, engine or not. A
+// tensor-parallel worker is doing the same work as the head node and its
+// accelerator and memory readings matter just as much.
+func hostSensors(uid func(string) string) map[string]Component {
+	return map[string]Component{
 		// --- accelerator and host ------------------------------------------
 		"gpu_utilization": {
 			Platform:          "sensor",

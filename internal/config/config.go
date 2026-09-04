@@ -21,8 +21,15 @@ type Config struct {
 	NodeID   string
 	NodeName string
 
+	// VLLMURL is empty on a node that runs no engine — a tensor-parallel
+	// worker, where only the head node serves the API. See
+	// [Config.WorkerMode].
 	VLLMURL     string
 	VLLMTimeout time.Duration
+	// ConfigURL is the address Home Assistant links to on the device
+	// page. It is not derived from VLLMURL, which is normally loopback
+	// and would send a browser to its own machine.
+	ConfigURL string
 
 	BrokerURL       string
 	ClientID        string
@@ -61,7 +68,8 @@ func Load(args []string) (Config, error) {
 	var c Config
 	fs.StringVar(&c.NodeID, "node-id", env("NODE_ID", hostname), "stable identifier for this node; entity ids derive from it")
 	fs.StringVar(&c.NodeName, "node-name", env("NODE_NAME", ""), "display name in Home Assistant (default: node id)")
-	fs.StringVar(&c.VLLMURL, "vllm-url", env("VLLM_URL", "http://localhost:8000"), "base URL of the vLLM server on this node")
+	fs.StringVar(&c.VLLMURL, "vllm-url", env("VLLM_URL", "http://localhost:8000"), "base URL of the vLLM server on this node; empty for a node that runs no engine")
+	fs.StringVar(&c.ConfigURL, "config-url", env("CONFIG_URL", ""), "address Home Assistant links to on the device page; unset publishes no link")
 	fs.DurationVar(&c.VLLMTimeout, "vllm-timeout", envDuration("VLLM_TIMEOUT", 5*time.Second), "per-request timeout for vLLM reads")
 	fs.StringVar(&c.BrokerURL, "broker", env("BROKER", "tcp://localhost:1883"), "MQTT broker URL: mqtts:// for TLS, tcp:// for plaintext")
 	fs.StringVar(&c.ClientID, "client-id", env("CLIENT_ID", ""), "MQTT client id (default: sparkwrangler-<node id>)")
@@ -84,6 +92,14 @@ func Load(args []string) (Config, error) {
 		return Config{}, err
 	}
 	return c, c.validate()
+}
+
+// WorkerMode reports whether this node runs no engine of its own. On a
+// tensor-parallel cluster only the head node serves the API; the others
+// hold half the weights and have an accelerator worth watching, but
+// nothing to ask about serving.
+func (c Config) WorkerMode() bool {
+	return strings.TrimSpace(c.VLLMURL) == ""
 }
 
 func (c Config) validate() error {

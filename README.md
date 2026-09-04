@@ -53,6 +53,22 @@ sudo systemctl daemon-reload && sudo systemctl enable --now sparkwrangler
 Run one per node. Each publishes its own device, and Home Assistant
 assembles them.
 
+## Worker nodes
+
+On a tensor-parallel cluster only the head node serves the API. The
+others hold half the weights and are doing exactly the same work, but
+there is no engine on them to ask.
+
+Leave `-vllm-url` empty on those nodes. The daemon then publishes
+accelerator and host readings and declares no serving entities at all,
+rather than a dozen sensors that can only ever read unknown next to a
+vLLM indicator stuck off — which looks like a broken node instead of a
+correctly configured one.
+
+The state payload follows the same rule: a worker omits `vllm_up`
+entirely rather than publishing `false`. False means the engine should be
+here and is not; a worker has no engine to be missing.
+
 ## The unit
 
 `Type=notify`, not `Type=simple`. The daemon signals readiness once the
