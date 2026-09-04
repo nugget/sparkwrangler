@@ -64,17 +64,27 @@ type Config struct {
 	QoS               int                  `json:"qos"`
 }
 
-// Topics for a node. Discovery is retained so Home Assistant recovers
-// the device after its own restart without waiting for a publish cycle;
-// state is retained for the same reason.
+// DiscoveryTopic returns the topic carrying a node's device-discovery
+// message, under Home Assistant's discovery prefix (conventionally
+// "homeassistant"). Publish to it retained, so Home Assistant recovers
+// the device after its own restart rather than waiting for the next
+// publish cycle.
 func DiscoveryTopic(discoveryPrefix, nodeID string) string {
 	return fmt.Sprintf("%s/device/%s/config", discoveryPrefix, nodeID)
 }
 
+// StateTopic returns the topic carrying a node's JSON state document.
+// Every component declared in the discovery message reads from this one
+// topic, selecting its own field with a value template. Publish retained
+// for the same reason as discovery.
 func StateTopic(basePrefix, nodeID string) string {
 	return fmt.Sprintf("%s/%s/state", basePrefix, nodeID)
 }
 
+// AvailabilityTopic returns the topic carrying a node's online or
+// offline marker. This is the topic a will is registered against, so a
+// node that loses power is reported offline by the broker rather than
+// leaving its entities frozen at their last healthy values.
 func AvailabilityTopic(basePrefix, nodeID string) string {
 	return fmt.Sprintf("%s/%s/availability", basePrefix, nodeID)
 }

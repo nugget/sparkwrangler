@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Split into independent jobs so wall-clock is the slowest job rather
+# than the sum. golangci-lint is hermetic — pinned in tools/go.mod and
+# run through `go run` inside the just recipe — so there is no install
+# step to go stale or to differ from what a developer runs locally.
+#
+# Caching: the module cache is shared because it is identical across
+# jobs, but the build cache is keyed PER JOB. Each job compiles a
+# different set of artifacts (test builds race objects, lint builds
+# golangci-lint), and a single shared key would let the jobs race and
+# each restore a cache missing its own artifacts, forcing a full
+# recompile every run.
+env:
+  # Keep in step with GOTOOLCHAIN in the justfile. The pin is the reason
+  # a local `just ci` and this workflow can disagree only about the
+  # machine, never about the rules.
+  GO_VERSION: '1.27.0'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: go-mod-${{ runner.os }}-${{ hashFiles('go.sum', 'tools/go.sum') }}
+          restore-keys: go-mod-${{ runner.os }}-
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: go-build-test-${{ runner.os }}-${{ hashFiles('go.sum', 'tools/go.sum') }}
+          restore-keys: go-build-test-${{ runner.os }}-
+      - uses: extractions/setup-just@v2
+      - name: Test (race) + coverage
+        run: just cover
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: go-mod-${{ runner.os }}-${{ hashFiles('go.sum', 'tools/go.sum') }}
+          restore-keys: go-mod-${{ runner.os }}-
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: go-build-lint-${{ runner.os }}-${{ hashFiles('go.sum', 'tools/go.sum') }}
+          restore-keys: go-build-lint-${{ runner.os }}-
+      - uses: extractions/setup-just@v2
+      - name: Format
+        run: just fmt-check
+      - name: Vet
+        run: just vet
+      - name: Lint
+        run: just lint
+
+  unit:
+    # The systemd unit is the deployment interface, so it is gated like
+    # code. Ubuntu runners carry systemd-analyze, and verify catches the
+    # class of mistake that is otherwise invisible: keys in the wrong
+    # section are parsed, ignored, and silently do nothing.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the unit parses and every key is understood
+        run: |
+          systemd-analyze verify deploy/sparkwrangler.service 2>&1 | tee /tmp/verify.log
+          # verify reports unknown keys on stderr and still exits 0, so
+          # the absence of output is the actual assertion. The missing
+          # ExecStart binary is expected on a runner and is filtered.
+          if grep -v 'is not executable' /tmp/verify.log | grep -q .; then
+            echo "::error::systemd-analyze verify reported problems"
+            exit 1
+          fi
+      - name: Report the hardening score
+        run: systemd-analyze security --offline=true deploy/sparkwrangler.service || true
+
+  build:
+    # The artifact that actually ships is a cross-compile, so cross-
+    # compiling is part of the gate rather than something discovered at
+    # deploy time.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: extractions/setup-just@v2
+      - name: Cross-compile for linux/arm64
+        run: just build-node
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sparkwrangler-linux-arm64
+          path: dist/sparkwrangler-linux-arm64
+          retention-days: 14

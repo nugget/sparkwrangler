@@ -159,11 +159,21 @@ good values forward would leave a calm dashboard over a dead server.
 | `internal/sdnotify` | systemd readiness, status and watchdog protocol |
 | `deploy/` | systemd unit |
 
-## Tests
+## Contributing
+
+[AGENTS.md](AGENTS.md) carries the conventions, the architecture, and a
+Gotchas section listing the things that looked obviously correct and were
+not. Read it before changing code.
 
 ```sh
-just ci
+just ci        # fmt-check, vet, lint, race tests — the whole gate
+just unit-check  # systemd-analyze verify + security; needs a systemd host
 ```
+
+`just ci` must pass before pushing. Linting is hermetic: golangci-lint is
+pinned in `tools/go.mod` and run through `go run`, so CI installs nothing
+and lints with the same rules you do. `godoclint` runs with
+`require-pkg-doc`.
 
 `internal/vllm/testdata/live-scrape.txt` is a recorded scrape from a real
 two-node vLLM server. Refresh it against your own server if upstream

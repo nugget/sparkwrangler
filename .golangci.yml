@@ -1,0 +1,44 @@
+# Borrowed from thane-ai-agent, minus the rules that exist for its
+# database and HTTP layers. The godoclint settings are the point: this is
+# a small daemon whose value is that an operator can read why a decision
+# was made, and require-pkg-doc keeps every package explaining what it is
+# for before it explains itself.
+version: "2"
+linters:
+  enable:
+    - godoclint
+    - errorlint
+    - bodyclose
+    - unconvert
+    - misspell
+  settings:
+    godoclint:
+      require-pkg-doc: true
+    errcheck:
+      check-type-assertions: true
+    staticcheck:
+      checks:
+        - "all"
+        # ST1003 flags initialisms this project spells deliberately —
+        # KVCacheUsage reads better than KvCacheUsage next to the vLLM
+        # metric it mirrors.
+        - "-ST1003"
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # A test that ignores an error on a socket it is about to assert on
+      # is clearer than one that checks it twice.
+      - linters:
+          - errcheck
+        path: _test\.go
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
