@@ -37,8 +37,15 @@ type Origin struct {
 // long forms are accepted for some keys and silently ignored for
 // others, and the abbreviations are what the schema documents.
 type Component struct {
-	Platform          string `json:"p"`
-	Name              string `json:"name"`
+	Platform string `json:"p"`
+	Name     string `json:"name"`
+	// HasEntityName tells Home Assistant that Name is the entity's own
+	// name, to be composed with the device's. Without it a sensor called
+	// "KV cache usage" is called that on every node, and two nodes give
+	// two identically-named entities; with it they become "spark-01 KV
+	// cache usage" and so on. Spelled in full because Home Assistant's
+	// abbreviation table has no short form for it.
+	HasEntityName     *bool  `json:"has_entity_name,omitempty"`
 	UniqueID          string `json:"uniq_id"`
 	ValueTemplate     string `json:"val_tpl,omitempty"`
 	DeviceClass       string `json:"dev_cla,omitempty"`

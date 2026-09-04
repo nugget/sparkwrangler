@@ -29,7 +29,7 @@ func TestDiscoveryTemplatesMatchStateKeys(t *testing.T) {
 	stateKeys := populatedStateKeys(t)
 
 	templateKeys := map[string]string{}
-	for id, c := range hadiscovery.Sensors("testnode") {
+	for id, c := range hadiscovery.Sensors("testnode", true) {
 		for _, m := range templateKey.FindAllStringSubmatch(c.ValueTemplate, -1) {
 			templateKeys[m[1]] = id
 		}
@@ -59,7 +59,7 @@ func populatedStateKeys(t *testing.T) map[string]bool {
 
 	f, i, i64 := 1.0, 1, int64(1)
 	s := State{
-		VLLMUp:                    true,
+		VLLMUp:                    ptrOf(true),
 		Model:                     "m",
 		KVCacheUsagePct:           &f,
 		RequestsRunning:           &i,
@@ -71,7 +71,7 @@ func populatedStateKeys(t *testing.T) map[string]bool {
 		MaxModelLen:               &i,
 		KVCacheTokens:             &i,
 		MaxConcurrency:            &f,
-		PrefixCachingEnabled:      true,
+		PrefixCachingEnabled:      ptrOf(true),
 		GPUUtilizationPct:         &f,
 		GPUClockMHz:               &f,
 		GPUTemperatureC:           &f,
@@ -102,7 +102,7 @@ func TestUniqueIDsAreUnique(t *testing.T) {
 	t.Parallel()
 
 	seen := map[string]string{}
-	for id, c := range hadiscovery.Sensors("spark-01") {
+	for id, c := range hadiscovery.Sensors("spark-01", true) {
 		if c.UniqueID == "" {
 			t.Errorf("component %q has no unique id", id)
 			continue
@@ -127,8 +127,8 @@ func TestDownNodeReportsNothingItCannotKnow(t *testing.T) {
 	prev := vllm.Reading{Up: true, GenerationTokens: ptrOf(100.0)}
 	s := FromVLLM(vllm.Reading{Up: false, KVCacheUsage: &usage}, &prev, time.Second)
 
-	if s.VLLMUp {
-		t.Error("VLLMUp = true for a down reading")
+	if s.VLLMUp == nil || *s.VLLMUp {
+		t.Errorf("VLLMUp = %v, want an explicit false for a configured but unreachable engine", s.VLLMUp)
 	}
 	if s.KVCacheUsagePct != nil {
 		t.Errorf("KVCacheUsagePct = %v, want nothing published for a down engine", *s.KVCacheUsagePct)
@@ -174,3 +174,77 @@ func TestTokenRateHandlesEngineRestart(t *testing.T) {
 }
 
 func ptrOf[T any](v T) *T { return &v }
+
+// TestWorkerModeDeclaresNoServingEntities pins what worker mode is for.
+// On a tensor-parallel cluster only the head node serves the API, so a
+// worker declaring the serving entities leaves a dozen permanently
+// unknown sensors and a vLLM indicator stuck off — which reads as a
+// broken node rather than a correctly configured one.
+func TestWorkerModeDeclaresNoServingEntities(t *testing.T) {
+	t.Parallel()
+
+	head := hadiscovery.Sensors("spark-01", true)
+	worker := hadiscovery.Sensors("spark-01", false)
+
+	if len(worker) >= len(head) {
+		t.Fatalf("worker declares %d components and head %d; want strictly fewer", len(worker), len(head))
+	}
+
+	// The accelerator and host readings matter just as much on a worker:
+	// it is doing the same work, on the same silicon.
+	for _, id := range []string{"gpu_utilization", "gpu_clock", "gpu_temperature", "gpu_power", "memory_available", "last_seen"} {
+		if _, ok := worker[id]; !ok {
+			t.Errorf("worker is missing %q, which has nothing to do with serving", id)
+		}
+	}
+
+	for _, id := range []string{"vllm_running", "served_model", "kv_cache_usage", "requests_running", "preemptions", "prefix_cache_hit_rate", "max_model_len"} {
+		if _, ok := worker[id]; ok {
+			t.Errorf("worker declares %q, which it can never report", id)
+		}
+		if _, ok := head[id]; !ok {
+			t.Errorf("head node is missing %q", id)
+		}
+	}
+}
+
+// TestWorkerStatePublishesNothingAboutServing pins the payload half of
+// the same contract. Absent rather than false: false means the engine
+// should be here and is not, and a worker has no engine to be missing.
+func TestWorkerStatePublishesNothingAboutServing(t *testing.T) {
+	t.Parallel()
+
+	raw, err := json.Marshal(WorkerState())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	for _, key := range []string{"vllm_up", "model", "kv_cache_usage_pct", "prefix_caching_enabled", "preemptions"} {
+		if _, present := decoded[key]; present {
+			t.Errorf("worker state publishes %q, which claims something about an engine it does not run", key)
+		}
+	}
+	if _, present := decoded["last_seen"]; !present {
+		t.Error("worker state has no last_seen; the node still needs to say it is alive")
+	}
+}
+
+// TestEveryComponentComposesItsName pins has_entity_name across the
+// catalog. Without it a sensor called "KV cache usage" is called exactly
+// that on every node, so two nodes produce two identically named
+// entities and neither says which machine it came from.
+func TestEveryComponentComposesItsName(t *testing.T) {
+	t.Parallel()
+
+	for _, withVLLM := range []bool{true, false} {
+		for id, c := range hadiscovery.Sensors("spark-01", withVLLM) {
+			if c.HasEntityName == nil || !*c.HasEntityName {
+				t.Errorf("component %q (withVLLM=%v) does not set has_entity_name", id, withVLLM)
+			}
+		}
+	}
+}

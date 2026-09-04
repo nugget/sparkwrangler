@@ -53,6 +53,7 @@ func TestStatusLine(t *testing.T) {
 
 	i := func(v int) *int { return &v }
 	f := func(v float64) *float64 { return &v }
+	b := func(v bool) *bool { return &v }
 
 	tests := []struct {
 		name  string
@@ -60,25 +61,37 @@ func TestStatusLine(t *testing.T) {
 		want  string
 	}{
 		{
+			// Absent, not false: a worker has no engine to be missing,
+			// so "unreachable" would report a fault that does not exist.
+			name:  "a worker reports what it does know",
+			state: publisher.State{GPUUtilizationPct: f(96)},
+			want:  "worker node, GPU 96%",
+		},
+		{
+			name:  "a worker with no accelerator reading says only that",
+			state: publisher.State{},
+			want:  "worker node",
+		},
+		{
 			name:  "a down engine says so plainly",
-			state: publisher.State{VLLMUp: false, Model: "stale"},
+			state: publisher.State{VLLMUp: b(false), Model: "stale"},
 			want:  "vLLM unreachable",
 		},
 		{
 			name:  "an idle engine",
-			state: publisher.State{VLLMUp: true, Model: "qwen", RequestsRunning: i(0), KVCacheUsagePct: f(1.9)},
+			state: publisher.State{VLLMUp: b(true), Model: "qwen", RequestsRunning: i(0), KVCacheUsagePct: f(1.9)},
 			want:  "serving qwen, 0 running, KV 1.9%",
 		},
 		{
 			// Queueing is only mentioned when there is some, so the line
 			// stays quiet until it has something to say.
 			name:  "a queue is surfaced",
-			state: publisher.State{VLLMUp: true, Model: "qwen", RequestsRunning: i(4), RequestsWaiting: i(2), KVCacheUsagePct: f(88.5)},
+			state: publisher.State{VLLMUp: b(true), Model: "qwen", RequestsRunning: i(4), RequestsWaiting: i(2), KVCacheUsagePct: f(88.5)},
 			want:  "serving qwen, 4 running, 2 waiting, KV 88.5%",
 		},
 		{
 			name:  "absent readings are simply omitted",
-			state: publisher.State{VLLMUp: true, Model: "qwen"},
+			state: publisher.State{VLLMUp: b(true), Model: "qwen"},
 			want:  "serving qwen",
 		},
 	}
