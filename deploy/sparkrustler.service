@@ -1,0 +1,41 @@
+# Install to /etc/systemd/system/sparkrustler.service
+#
+# Settings live in /etc/sparkrustler.env so the broker password is not in
+# the unit file, which is world-readable:
+#
+#   SPARKRUSTLER_BROKER=tcp://mqtt.example.net:1883
+#   SPARKRUSTLER_USERNAME=sparkrustler
+#   SPARKRUSTLER_PASSWORD=...
+#   SPARKRUSTLER_DEVICE_MODEL=DGX Spark (GB10)
+#
+#   chown root:root /etc/sparkrustler.env && chmod 600 /etc/sparkrustler.env
+
+[Unit]
+Description=sparkrustler — vLLM node telemetry to Home Assistant
+Documentation=https://github.com/nugget/sparkrustler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sparkrustler.env
+ExecStart=/usr/local/bin/sparkrustler
+Restart=always
+RestartSec=10
+
+# SIGTERM is handled: the daemon publishes an explicit offline before
+# disconnecting, because a clean shutdown does not fire the MQTT will.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# It reads /proc and execs nvidia-smi; it needs nothing else.
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

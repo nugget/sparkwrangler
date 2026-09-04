@@ -14,8 +14,9 @@ platform adapter; the vLLM half is whatever vLLM exports.
 
 ## Status
 
-Early. The reading and publishing model is built and tested; the MQTT
-transport and the host adapter are not yet wired.
+Working end to end and not yet run in anger. One dependency,
+`paho.mqtt.golang`, because MQTT has no standard-library equivalent;
+everything else is stdlib, including the Prometheus parser.
 
 | | |
 |---|---|
@@ -24,9 +25,34 @@ transport and the host adapter are not yet wired.
 | HA device discovery payloads | done, full entity metadata |
 | State payload and derived rates | done |
 | Discovery/state contract tests | done |
-| MQTT transport | not started |
-| Host and GPU adapter | not started |
-| Config and daemon | not started |
+| MQTT transport, LWT, reconnect | done |
+| GPU adapter (nvidia-smi) | done, tolerates `[N/A]` fields |
+| Host memory adapter | done |
+| Config, daemon, systemd unit | done |
+| Run against a real broker | not yet |
+
+## Install
+
+```sh
+just build-node                       # linux/arm64, which is what a Spark is
+scp dist/sparkrustler-linux-arm64 <node>:/usr/local/bin/sparkrustler
+scp deploy/sparkrustler.service <node>:/etc/systemd/system/
+```
+
+Settings come from flags or `SPARKRUSTLER_`-prefixed environment
+variables; the unit reads `/etc/sparkrustler.env` so the broker password
+stays out of a world-readable unit file.
+
+```sh
+sparkrustler \
+  -node-id spark-a23e \
+  -vllm-url http://localhost:8000 \
+  -broker tcp://mqtt.example.net:1883 \
+  -device-model "DGX Spark (GB10)"
+```
+
+Run one per node. Each publishes its own device, and Home Assistant
+assembles them.
 
 ## Why these sensors
 
@@ -86,14 +112,19 @@ good values forward would leave a calm dashboard over a dead server.
 
 | path | |
 |---|---|
+| `cmd/sparkrustler` | the daemon: poll, observe, publish |
 | `internal/vllm` | metrics parsing, HTTP client, the reading model |
 | `internal/hadiscovery` | HA device discovery types and the sensor catalog |
-| `internal/publisher` | state payload, derived rates, the discovery contract tests |
+| `internal/publisher` | state payload, derived rates, MQTT transport |
+| `internal/gpu` | accelerator adapters; `nvidia-smi` today |
+| `internal/host` | host memory, which on unified memory is the number that matters |
+| `internal/config` | flags and environment |
+| `deploy/` | systemd unit |
 
 ## Tests
 
 ```sh
-go test ./...
+just ci
 ```
 
 `internal/vllm/testdata/live-scrape.txt` is a recorded scrape from a real
