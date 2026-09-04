@@ -5,7 +5,7 @@ package publisher
 import (
 	"time"
 
-	"github.com/nugget/sparkrustler/internal/vllm"
+	"github.com/nugget/sparkwrangler/internal/vllm"
 )
 
 // State is the single JSON document published to a node's state topic.

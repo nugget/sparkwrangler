@@ -1,4 +1,4 @@
-# sparkrustler — vLLM node telemetry to Home Assistant over MQTT
+# sparkwrangler — vLLM node telemetry to Home Assistant over MQTT
 
 default: ci
 
@@ -6,11 +6,11 @@ default: ci
 ci: fmt-check vet test
 
 build:
-    go build -o sparkrustler ./cmd/sparkrustler
+    go build -o sparkwrangler ./cmd/sparkwrangler
 
 # Cross-compile for the nodes, which are arm64 Linux.
 build-node:
-    GOOS=linux GOARCH=arm64 go build -o dist/sparkrustler-linux-arm64 ./cmd/sparkrustler
+    GOOS=linux GOARCH=arm64 go build -o dist/sparkwrangler-linux-arm64 ./cmd/sparkwrangler
 
 test:
     go test ./...
@@ -32,5 +32,5 @@ refresh-fixture url:
 
 # Lint the unit file. Run on a systemd host; needs no root.
 unit-check:
-    systemd-analyze verify deploy/sparkrustler.service
-    systemd-analyze security deploy/sparkrustler.service
+    systemd-analyze verify deploy/sparkwrangler.service
+    systemd-analyze security deploy/sparkwrangler.service

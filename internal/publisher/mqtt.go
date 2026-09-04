@@ -8,7 +8,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
-	"github.com/nugget/sparkrustler/internal/hadiscovery"
+	"github.com/nugget/sparkwrangler/internal/hadiscovery"
 )
 
 const (
@@ -65,13 +65,13 @@ func NewMQTT(opts MQTTOptions) (*MQTT, error) {
 		opts.DiscoveryPrefix = "homeassistant"
 	}
 	if opts.TopicPrefix == "" {
-		opts.TopicPrefix = "sparkrustler"
+		opts.TopicPrefix = "sparkwrangler"
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
 	if opts.ClientID == "" {
-		opts.ClientID = "sparkrustler-" + opts.NodeID
+		opts.ClientID = "sparkwrangler-" + opts.NodeID
 	}
 
 	p := &MQTT{
@@ -126,7 +126,7 @@ func NewMQTT(opts MQTTOptions) (*MQTT, error) {
 func (p *MQTT) Announce() error {
 	cfg := hadiscovery.Config{
 		Device:            p.device(),
-		Origin:            hadiscovery.Origin{Name: "sparkrustler", SWVersion: hadiscovery.Version, SupportURL: "https://github.com/nugget/sparkrustler"},
+		Origin:            hadiscovery.Origin{Name: "sparkwrangler", SWVersion: hadiscovery.Version, SupportURL: "https://github.com/nugget/sparkwrangler"},
 		Components:        hadiscovery.Sensors(p.nodeID),
 		StateTopic:        p.stateTopic,
 		AvailabilityTopic: p.availTopic,

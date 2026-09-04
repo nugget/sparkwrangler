@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nugget/sparkrustler/internal/publisher"
+	"github.com/nugget/sparkwrangler/internal/publisher"
 )
 
 // TestWatchdogTick pins that the loop runs at whichever cadence is

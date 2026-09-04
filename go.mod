@@ -1,4 +1,4 @@
-module github.com/nugget/sparkrustler
+module github.com/nugget/sparkwrangler
 
 go 1.27
 

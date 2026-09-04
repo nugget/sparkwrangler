@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nugget/sparkrustler/internal/hadiscovery"
-	"github.com/nugget/sparkrustler/internal/vllm"
+	"github.com/nugget/sparkwrangler/internal/hadiscovery"
+	"github.com/nugget/sparkwrangler/internal/vllm"
 )
 
 var templateKey = regexp.MustCompile(`value_json\.([a-zA-Z0-9_]+)`)

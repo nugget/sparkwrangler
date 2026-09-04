@@ -1,4 +1,4 @@
-// Command sparkrustler publishes the state of one vLLM node to Home
+// Command sparkwrangler publishes the state of one vLLM node to Home
 // Assistant over MQTT.
 package main
 
@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nugget/sparkrustler/internal/config"
-	"github.com/nugget/sparkrustler/internal/gpu"
-	"github.com/nugget/sparkrustler/internal/hadiscovery"
-	"github.com/nugget/sparkrustler/internal/host"
-	"github.com/nugget/sparkrustler/internal/publisher"
-	"github.com/nugget/sparkrustler/internal/sdnotify"
-	"github.com/nugget/sparkrustler/internal/vllm"
+	"github.com/nugget/sparkwrangler/internal/config"
+	"github.com/nugget/sparkwrangler/internal/gpu"
+	"github.com/nugget/sparkwrangler/internal/hadiscovery"
+	"github.com/nugget/sparkwrangler/internal/host"
+	"github.com/nugget/sparkwrangler/internal/publisher"
+	"github.com/nugget/sparkwrangler/internal/sdnotify"
+	"github.com/nugget/sparkwrangler/internal/vllm"
 )
 
 func main() {
@@ -27,7 +27,7 @@ func main() {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
-		fmt.Fprintln(os.Stderr, "sparkrustler:", err)
+		fmt.Fprintln(os.Stderr, "sparkwrangler:", err)
 		os.Exit(1)
 	}
 }

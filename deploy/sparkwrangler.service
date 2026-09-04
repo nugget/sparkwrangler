@@ -1,17 +1,17 @@
-# sparkrustler — vLLM node telemetry to Home Assistant over MQTT
+# sparkwrangler — vLLM node telemetry to Home Assistant over MQTT
 #
-#   install -m0755 sparkrustler /usr/local/bin/sparkrustler
-#   install -m0644 sparkrustler.service /etc/systemd/system/
-#   install -m0600 sparkrustler.env /etc/sparkrustler.env
-#   systemctl daemon-reload && systemctl enable --now sparkrustler
+#   install -m0755 sparkwrangler /usr/local/bin/sparkwrangler
+#   install -m0644 sparkwrangler.service /etc/systemd/system/
+#   install -m0600 sparkwrangler.env /etc/sparkwrangler.env
+#   systemctl daemon-reload && systemctl enable --now sparkwrangler
 #
 # Verify the hardening after any edit:
 #
-#   systemd-analyze security sparkrustler.service
+#   systemd-analyze security sparkwrangler.service
 
 [Unit]
 Description=vLLM node telemetry to Home Assistant over MQTT
-Documentation=https://github.com/nugget/sparkrustler
+Documentation=https://github.com/nugget/sparkwrangler
 
 # network-online rather than network: the first act after start is to
 # dial a broker, and Wants= is required for the target to be pulled in.
@@ -39,8 +39,8 @@ Type=notify
 NotifyAccess=main
 WatchdogSec=60
 
-EnvironmentFile=/etc/sparkrustler.env
-ExecStart=/usr/local/bin/sparkrustler
+EnvironmentFile=/etc/sparkwrangler.env
+ExecStart=/usr/local/bin/sparkwrangler
 
 Restart=always
 RestartSec=10s

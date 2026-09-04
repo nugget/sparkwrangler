@@ -40,10 +40,10 @@ type Config struct {
 }
 
 // Load parses flags, falling back to environment variables and then to
-// defaults. Every flag has a SPARKRUSTLER_ prefixed environment
+// defaults. Every flag has a SPARKWRANGLER_ prefixed environment
 // equivalent, which is what a container or a systemd unit will use.
 func Load(args []string) (Config, error) {
-	fs := flag.NewFlagSet("sparkrustler", flag.ContinueOnError)
+	fs := flag.NewFlagSet("sparkwrangler", flag.ContinueOnError)
 
 	hostname, _ := os.Hostname()
 	// Only the short name: a node identified as spark-a23e.example.net
@@ -58,11 +58,11 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&c.VLLMURL, "vllm-url", env("VLLM_URL", "http://localhost:8000"), "base URL of the vLLM server on this node")
 	fs.DurationVar(&c.VLLMTimeout, "vllm-timeout", envDuration("VLLM_TIMEOUT", 5*time.Second), "per-request timeout for vLLM reads")
 	fs.StringVar(&c.BrokerURL, "broker", env("BROKER", "tcp://localhost:1883"), "MQTT broker URL")
-	fs.StringVar(&c.ClientID, "client-id", env("CLIENT_ID", ""), "MQTT client id (default: sparkrustler-<node id>)")
+	fs.StringVar(&c.ClientID, "client-id", env("CLIENT_ID", ""), "MQTT client id (default: sparkwrangler-<node id>)")
 	fs.StringVar(&c.Username, "username", env("USERNAME", ""), "MQTT username")
 	fs.StringVar(&c.Password, "password", env("PASSWORD", ""), "MQTT password; prefer the environment over the command line")
 	fs.StringVar(&c.DiscoveryPrefix, "discovery-prefix", env("DISCOVERY_PREFIX", "homeassistant"), "Home Assistant discovery topic prefix")
-	fs.StringVar(&c.TopicPrefix, "topic-prefix", env("TOPIC_PREFIX", "sparkrustler"), "topic prefix for state and availability")
+	fs.StringVar(&c.TopicPrefix, "topic-prefix", env("TOPIC_PREFIX", "sparkwrangler"), "topic prefix for state and availability")
 	fs.IntVar(&c.QoS, "qos", envInt("QOS", 1), "MQTT QoS for published messages")
 	fs.DurationVar(&c.Interval, "interval", envDuration("INTERVAL", 15*time.Second), "how often to publish state")
 	fs.StringVar(&c.NvidiaSMIPath, "nvidia-smi", env("NVIDIA_SMI", ""), "path to nvidia-smi (default: resolve on PATH)")
@@ -92,7 +92,7 @@ func (c Config) validate() error {
 }
 
 func env(name, fallback string) string {
-	if v, ok := os.LookupEnv("SPARKRUSTLER_" + name); ok {
+	if v, ok := os.LookupEnv("SPARKWRANGLER_" + name); ok {
 		return v
 	}
 	return fallback

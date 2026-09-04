@@ -41,9 +41,9 @@ func TestLoadValidation(t *testing.T) {
 // the environment file supplies the defaults and an operator debugging by
 // hand overrides one of them on the command line.
 func TestFlagsBeatEnvironment(t *testing.T) {
-	t.Setenv("SPARKRUSTLER_NODE_ID", "from-env")
-	t.Setenv("SPARKRUSTLER_INTERVAL", "45s")
-	t.Setenv("SPARKRUSTLER_VLLM_URL", "http://env:8000")
+	t.Setenv("SPARKWRANGLER_NODE_ID", "from-env")
+	t.Setenv("SPARKWRANGLER_INTERVAL", "45s")
+	t.Setenv("SPARKWRANGLER_VLLM_URL", "http://env:8000")
 
 	c, err := Load([]string{"-node-id", "from-flag"})
 	if err != nil {
@@ -64,8 +64,8 @@ func TestFlagsBeatEnvironment(t *testing.T) {
 // does not take the daemon down. A typo in an environment file should
 // cost a setting, not a node's monitoring.
 func TestBadEnvironmentFallsBackToDefault(t *testing.T) {
-	t.Setenv("SPARKRUSTLER_INTERVAL", "not-a-duration")
-	t.Setenv("SPARKRUSTLER_QOS", "banana")
+	t.Setenv("SPARKWRANGLER_INTERVAL", "not-a-duration")
+	t.Setenv("SPARKWRANGLER_QOS", "banana")
 
 	c, err := Load([]string{"-node-id", "n"})
 	if err != nil {

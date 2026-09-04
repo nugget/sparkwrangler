@@ -1,4 +1,4 @@
-# sparkrustler
+# sparkwrangler
 
 Publishes the state of a vLLM node to Home Assistant over MQTT, as a
 device with sensors rather than a wall of text in a terminal.
@@ -37,17 +37,17 @@ everything else is stdlib, including the Prometheus parser.
 
 ```sh
 just build-node                       # linux/arm64, which is what a Spark is
-scp dist/sparkrustler-linux-arm64 <node>:/tmp/sparkrustler
-scp deploy/sparkrustler.service deploy/sparkrustler.env.example <node>:/tmp/
+scp dist/sparkwrangler-linux-arm64 <node>:/tmp/sparkwrangler
+scp deploy/sparkwrangler.service deploy/sparkwrangler.env.example <node>:/tmp/
 ```
 
 On the node:
 
 ```sh
-sudo install -m0755 /tmp/sparkrustler /usr/local/bin/sparkrustler
-sudo install -m0644 /tmp/sparkrustler.service /etc/systemd/system/
-sudo install -m0600 /tmp/sparkrustler.env.example /etc/sparkrustler.env
-sudo systemctl daemon-reload && sudo systemctl enable --now sparkrustler
+sudo install -m0755 /tmp/sparkwrangler /usr/local/bin/sparkwrangler
+sudo install -m0644 /tmp/sparkwrangler.service /etc/systemd/system/
+sudo install -m0600 /tmp/sparkwrangler.env.example /etc/sparkwrangler.env
+sudo systemctl daemon-reload && sudo systemctl enable --now sparkwrangler
 ```
 
 Run one per node. Each publishes its own device, and Home Assistant
@@ -149,7 +149,7 @@ good values forward would leave a calm dashboard over a dead server.
 
 | path | |
 |---|---|
-| `cmd/sparkrustler` | the daemon: poll, observe, publish |
+| `cmd/sparkwrangler` | the daemon: poll, observe, publish |
 | `internal/vllm` | metrics parsing, HTTP client, the reading model |
 | `internal/hadiscovery` | HA device discovery types and the sensor catalog |
 | `internal/publisher` | state payload, derived rates, MQTT transport |
